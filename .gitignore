@@ -1,6 +1,8 @@
 # Build / dist
 dist/
 build/
+build_log.txt
+DataHub.spec
 __pycache__/
 *.pyc
 DataHub.spec

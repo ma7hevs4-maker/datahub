@@ -20,7 +20,7 @@ echo Selenium em: %SELENIUM_DIR%
 
 echo.
 echo Gerando executavel...
-python -m PyInstaller ^
+python -m PyInstaller --noconfirm ^
     --name DataHub ^
     --onedir ^
     --windowed ^

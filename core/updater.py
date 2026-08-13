@@ -9,8 +9,8 @@ Fluxo:
   3. launch_updater(bat_path) -> dispara o .bat em processo separado e
      encerra este app (para liberar o exe em uso).
 
-O pacote publicado num Release do GitHub deve ser um zip cujo conteudo tem
-uma pasta "DataHub" (ou seja: zipar a pasta dist\DataHub, nao o seu conteudo).
+    O pacote publicado num Release do GitHub deve ser um zip cujo conteudo tem
+uma pasta "DataHub" (ou seja: zipar a pasta dist/DataHub, nao o seu conteudo).
 O asset deve chamar-se "DataHub.zip" (ou ser o unico .zip do Release).
 """
 import os
@@ -32,16 +32,25 @@ API_URL = "https://api.github.com/repos/{repo}/releases/latest"
 ASSET_NAME = "DataHub.zip"  # nome esperado do asset no Release
 
 
+def _version_file_candidates():
+    exe_dir = Path(sys.executable).parent
+    candidates = [exe_dir / "version.txt"]
+    meipass = getattr(sys, "_MEIPASS", None)
+    if meipass:
+        candidates.append(Path(meipass) / "version.txt")
+    return candidates
+
+
 def local_version():
-    """Versao embedada pelo build (version.txt na pasta do exe)."""
-    try:
-        p = Path(sys.executable).parent / "version.txt"
-        if p.exists():
-            v = p.read_text(encoding="utf-8").strip()
-            if v:
-                return v
-    except Exception:
-        pass
+    """Versao embedada pelo build (version.txt, na pasta do exe ou em _internal)."""
+    for p in _version_file_candidates():
+        try:
+            if p.exists():
+                v = p.read_text(encoding="utf-8").strip()
+                if v:
+                    return v
+        except Exception:
+            pass
     return APP_VERSION_FALLBACK
 
 
@@ -49,7 +58,7 @@ def is_installed():
     """True somente quando rodando do build (dist/DataHub) com version.txt.
     Evita que o update sobrescreva a pasta do Python ao rodar via 'python app.py'."""
     try:
-        return (Path(sys.executable).parent / "version.txt").exists()
+        return any(p.exists() for p in _version_file_candidates())
     except Exception:
         return False
 
