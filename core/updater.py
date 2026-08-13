@@ -24,8 +24,8 @@ import urllib.request
 import urllib.error
 from pathlib import Path
 
-# >>>>> PREENCHA COM "seu-usuario/seu-repo" do GitHub <<<<<
-REPO = "SEU_USUARIO/SEU_REPO"
+# >>>>> slug do repositorio GitHub (usuario/repo) <<<<<
+REPO = "ma7hevs4-maker/datahub"
 
 APP_VERSION_FALLBACK = "0.0.0"
 API_URL = "https://api.github.com/repos/{repo}/releases/latest"
