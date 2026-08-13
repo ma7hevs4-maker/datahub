@@ -1,4 +1,5 @@
 @echo off
+cd /d "%~dp0"
 echo ========================================
 echo   DataHub v2 - Gerando Executavel
 echo ========================================
@@ -8,8 +9,7 @@ echo Instalando PyInstaller...
 python -m pip install pyinstaller
 
 echo.
-echo Limpando builds anteriores...
-if exist build rmdir /s /q build
+echo Limpando build anterior (dist)...
 if exist dist rmdir /s /q dist
 if exist DataHub.spec del /q DataHub.spec
 
@@ -24,6 +24,7 @@ python -m PyInstaller --noconfirm ^
     --name DataHub ^
     --onedir ^
     --windowed ^
+    --noupx ^
     --add-data "config.py;." ^
     --add-data "%SELENIUM_DIR%;selenium" ^
     --add-data "core/processors/dashboard_template.html;core/processors" ^
@@ -53,8 +54,8 @@ python -m PyInstaller --noconfirm ^
     --hidden-import=selenium.webdriver.chrome.webdriver ^
     --hidden-import=selenium.webdriver.remote.webdriver ^
     --hidden-import=selenium.webdriver.remote.webelement ^
+    --hidden-import=selenium.common.exceptions ^
     --hidden-import=core.updater ^
-    --collect-submodules selenium ^
     app.py
 
 echo.
@@ -69,4 +70,3 @@ echo 1. Compacte a PASTA dist\DataHub (nao o conteudo de dentro) em DataHub.zip
 echo 2. O usuario precisa ter o Google Chrome instalado
 echo 3. Extraia e rode DataHub.exe - ou publique o DataHub.zip num Release do GitHub
 echo ========================================
-pause

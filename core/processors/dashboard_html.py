@@ -606,8 +606,8 @@ table.dt tr.team-row td:nth-child(1){font-weight:600}
     <div class="filters" id="f-t2"></div>
     <div class="grid">
       <div class="card"><h3>Fechados considerados p/ TMA — por Polo</h3><canvas id="t2-1"></canvas></div>
-      <div class="card"><h3>Fechados por Equipe (Equipe Desl.)</h3><canvas id="t2-2"></canvas></div>
       <div class="card"><h3>Média TMA — considerados</h3><canvas id="t2-3"></canvas></div>
+      <div class="card"><h3>Fechados por Equipe (Equipe Desl.)</h3><canvas id="t2-2"></canvas></div>
     </div>
   </section>
 

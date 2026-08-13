@@ -22,6 +22,7 @@ import tempfile
 import subprocess
 import urllib.request
 import urllib.error
+import ssl
 from pathlib import Path
 
 # >>>>> slug do repositorio GitHub (usuario/repo) <<<<<
@@ -30,6 +31,26 @@ REPO = "ma7hevs4-maker/datahub"
 APP_VERSION_FALLBACK = "0.0.0"
 API_URL = "https://api.github.com/repos/{repo}/releases/latest"
 ASSET_NAME = "DataHub.zip"  # nome esperado do asset no Release
+
+
+def _make_ssl_ctx():
+    """Contexto SSL: cert store do SO (pega CA de proxy corporativo no Windows),
+    depois certifi, e em ultimo caso sem verificacao."""
+    try:
+        ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+        ctx.load_default_certs()
+        return ctx
+    except Exception:
+        pass
+    try:
+        import certifi
+        return ssl.create_default_context(cafile=certifi.where())
+    except Exception:
+        pass
+    try:
+        return ssl.create_default_context()
+    except Exception:
+        return ssl._create_unverified_context()
 
 
 def _version_file_candidates():
@@ -102,7 +123,7 @@ def check_for_update(repo=None, timeout=10):
                 "Accept": "application/vnd.github+json",
             },
         )
-        with urllib.request.urlopen(req, timeout=timeout) as r:
+        with urllib.request.urlopen(req, timeout=timeout, context=_make_ssl_ctx()) as r:
             data = json.loads(r.read().decode("utf-8"))
         tag = data.get("tag_name")
         assets = data.get("assets") or []
@@ -129,7 +150,7 @@ def check_for_update(repo=None, timeout=10):
 
 def _download(url, dest, progress=None):
     req = urllib.request.Request(url, headers={"User-Agent": "DataHub-Updater"})
-    with urllib.request.urlopen(req, timeout=120) as r:
+    with urllib.request.urlopen(req, timeout=120, context=_make_ssl_ctx()) as r:
         total = int(r.headers.get("Content-Length", 0) or 0)
         downloaded = 0
         chunk = 64 * 1024

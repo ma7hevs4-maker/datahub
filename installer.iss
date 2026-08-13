@@ -1,0 +1,33 @@
+[Setup]
+AppName=DataHub
+AppVersion=1.0.6
+AppPublisher=DataHub
+DefaultDirName={localappdata}\DataHub
+DefaultGroupName=DataHub
+OutputDir=C:\Users\BR0163806927\Downloads\Agente I.A\datahub_v2\dist
+OutputBaseFilename=DataHub-1.0.6-Setup
+Compression=lzma2
+SolidCompression=yes
+PrivilegesRequired=lowest
+UninstallDisplayIcon={app}\DataHub.exe
+ArchitecturesInstallIn64BitMode=x64
+ArchitecturesAllowed=x64
+WizardStyle=modern
+DisableProgramGroupPage=auto
+; O app atualiza sozinho pelo GitHub, entao instalamos numa pasta gravavel
+; sem admin (localappdata) para o updater funcionar sem pedir UAC.
+
+[Messages]
+; textos em portugues (fallback english se faltar)
+WelcomeLabel1= Bem-vindo ao Assistente de Instalação do DataHub
+WizardFinished= O DataHub foi instalado com sucesso!
+
+[Files]
+Source: C:\Users\BR0163806927\Downloads\Agente I.A\datahub_v2\dist\DataHub\*; DestDir: {app}; Flags: ignoreversion recursesubdirs createallsubdirs
+
+[Icons]
+Name: {group}\DataHub; Filename: {app}\DataHub.exe
+Name: {autodesktop}\DataHub; Filename: {app}\DataHub.exe; Tasks: desktopicon
+
+[Tasks]
+Name: desktopicon; Description: "Criar atalho na Área de Trabalho"; GroupDescription: "Atalhos:"; Flags: unchecked

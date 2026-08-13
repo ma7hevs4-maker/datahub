@@ -44,6 +44,7 @@ class AppConfig:
     pasta_local: str = ""
     webhook_n8n: str = ""
     base_mensal_enabled: bool = True
+    tema_claro: bool = False
 
 
 def _from_dict(cls, data: dict):
@@ -74,6 +75,7 @@ def load_config() -> AppConfig:
         cfg.pasta_local = data.get("pasta_local", "")
         cfg.webhook_n8n = data.get("webhook_n8n", "")
         cfg.base_mensal_enabled = data.get("base_mensal_enabled", True)
+        cfg.tema_claro = data.get("tema_claro", False)
         return cfg
     except Exception:
         return AppConfig()
