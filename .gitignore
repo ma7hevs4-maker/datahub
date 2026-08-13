@@ -1,0 +1,16 @@
+# Build / dist
+dist/
+build/
+__pycache__/
+*.pyc
+DataHub.spec
+*.exe
+
+# Ambiente
+.venv/
+venv/
+env/
+
+# OS
+Thumbs.db
+Desktop.ini
