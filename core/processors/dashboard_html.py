@@ -166,6 +166,7 @@ def gerar_dashboard_html(df, saida=None, log_fn=print):
     c_grupo = col("Grupo Processos (Equipe atrib.)")
     c_grupo_d = col("Grupo Processos (Equipe desloc.)")
     c_dia = col("Dia")
+    c_mes = col("Mês")
     c_equipe = col("Equipe Atribuída", "Equipe Atribuida")
     c_equi_d = col("Equipe Desl.", "Equipe Desloc.")
     c_cli_af = col("Cli Af Max")
@@ -262,6 +263,7 @@ def gerar_dashboard_html(df, saida=None, log_fn=print):
         grupo = _norm(val(c_grupo))
         grupo_d = _norm(val(c_grupo_d))
         dia = _norm(val(c_dia))
+        mes = _norm(val(c_mes))
         equipe = _norm(val(c_equipe))
         equi_d = _norm(val(c_equi_d))
         equi_op = _norm(val(c_equi_op)).lower()
@@ -302,6 +304,7 @@ def gerar_dashboard_html(df, saida=None, log_fn=print):
             "gp": grupo,
             "gpd": grupo_d,
             "d": dia,
+            "mes": mes,
             "eq": equipe,
             "eqd": equi_d,
             "eo": equi_op,
@@ -462,6 +465,7 @@ table.dt tr.team-row td:nth-child(1){font-weight:600}
 <div class="tabs">
   <button class="tab active" data-tab="d1" onclick="sw('d1')">Dashboard (1 polo)</button>
   <button class="tab" data-tab="d2" onclick="sw('d2')">Dashboard 2 (todos os polos)</button>
+  <button class="tab" data-tab="d3" onclick="sw('d3')">Dashboard 3 (Mês/Dia)</button>
   <button class="tab" data-tab="inst" onclick="sw('inst')">Regras</button>
 </div>
 
@@ -473,6 +477,7 @@ table.dt tr.team-row td:nth-child(1){font-weight:600}
     <button class="segbtn" data-seg="m1"><span class="dot" style="background:#5f6b7a"></span>Entrada &amp; Saída</button>
     <button class="segbtn" data-seg="o1"><span class="dot" style="background:#1a7f37"></span>Em Aberto</button>
     <button class="segbtn" data-seg="x1"><span class="dot" style="background:#d1242f"></span>+24h</button>
+    <button class="segbtn" data-seg="xO"><span class="dot" style="background:#0969da"></span>OSM</button>
     <button class="segbtn" data-seg="x2"><span class="dot" style="background:#8250df"></span>Ordem 2</button>
     <button class="segbtn" data-seg="x3"><span class="dot" style="background:#0aa2a2"></span>5 Regras</button>
   </div>
@@ -512,7 +517,15 @@ table.dt tr.team-row td:nth-child(1){font-weight:600}
       <div class="card"><h3>Entrada × Saída por Turno</h3><canvas id="m1-1"></canvas></div>
       <div class="card"><h3>Entrada × Saída por Hora</h3><canvas id="m1-2"></canvas></div>
       <div class="card"><h3>Entrada × Saída por Hora — Clientes (Clts Atual)</h3><canvas id="m1-3"></canvas></div>
-      <div class="card"><h3>Entrada × Saída por Hora — OSM (Sim)</h3><canvas id="m1-4"></canvas></div>
+    </div>
+  </section>
+
+  <section class="segblock" id="seg-xO">
+    <div class="seghead"><span class="dot" style="background:#0969da"></span>OSM<span class="block-hint">duplo clique nas barras/KPIs/Top 10 para detalhar</span></div>
+    <div class="filters" id="f-xO"></div>
+    <div class="grid">
+      <div class="card"><h3>Entrada × Saída por Hora — OSM (Sim)</h3><canvas id="xO-1"></canvas></div>
+      <div class="card"><h3>OSM — Sim × Não</h3><div class="stack"><div class="card vcard"><div class="v" id="xO-sim">0</div><div class="l">Sim</div></div><div class="card vcard"><div class="v" id="xO-nao">0</div><div class="l">Não</div></div></div></div>
     </div>
   </section>
 
@@ -620,6 +633,109 @@ table.dt tr.team-row td:nth-child(1){font-weight:600}
       <div class="card"><h3>Atribuído por Processo — Abertos</h3><canvas id="p2-3"></canvas></div>
       <div class="card"><h3>Improdutivo por Processo — Fechados</h3><canvas id="p2-4"></canvas></div>
       <div class="card"><h3>Fechados por Processo</h3><canvas id="p2-5"></canvas></div>
+    </div>
+  </section>
+</div>
+
+<!-- ============================= ABA 3 ============================= -->
+<div class="panel" id="d3">
+  <div class="segbar" id="segbar3">
+    <button class="segbtn" data-seg="e3"><span class="dot" style="background:#1f6feb"></span>Entrada</button>
+    <button class="segbtn" data-seg="s3"><span class="dot" style="background:#f0820f"></span>Saída</button>
+    <button class="segbtn" data-seg="m3"><span class="dot" style="background:#5f6b7a"></span>Entrada &amp; Saída</button>
+    <button class="segbtn" data-seg="o3"><span class="dot" style="background:#1a7f37"></span>Em Aberto</button>
+    <button class="segbtn" data-seg="x31"><span class="dot" style="background:#d1242f"></span>+24h</button>
+    <button class="segbtn" data-seg="xO3"><span class="dot" style="background:#0969da"></span>OSM</button>
+    <button class="segbtn" data-seg="x32"><span class="dot" style="background:#8250df"></span>Ordem 2</button>
+    <button class="segbtn" data-seg="x33"><span class="dot" style="background:#0aa2a2"></span>5 Regras</button>
+  </div>
+
+  <div class="filters" id="f-top3"></div>
+
+  <div id="resumo3"><div class="kpis" id="k3"></div>
+  <div class="topbox"><div class="tophead"><h4>Top 10 Afetações (abertos)</h4><button type="button" class="export-btn" onclick="exportTop10('d3')">⬇ Exportar Top 10</button></div><div id="top3"></div></div></div>
+
+  <section class="segblock" id="seg-e3">
+    <div class="seghead"><span class="dot" style="background:#1f6feb"></span>Entrada<span class="block-hint">duplo clique nas barras/KPIs/Top 10 para detalhar</span></div>
+    <div class="filters" id="f-e3"></div>
+    <div class="grid">
+      <div class="card"><h3>Entrada por Hora — Incidente × Reincidente</h3><canvas id="d3-e1-1"></canvas></div>
+      <div class="card"><h3>Entrada por Turno — Incidente × Reincidente</h3><canvas id="d3-e1-2"></canvas></div>
+      <div class="card"><h3>Análise de Reincidentes — Equipe × Operador</h3><canvas id="d3-e1-3"></canvas></div>
+      <div class="card"><h3>Primeira Causa de Reincidência (ranking)</h3><canvas id="d3-e1-4"></canvas></div>
+      <div class="card"><h3>Top Equipes com Reincidência</h3><canvas id="d3-e1-5"></canvas></div>
+    </div>
+  </section>
+
+  <section class="segblock" id="seg-s3">
+    <div class="seghead"><span class="dot" style="background:#f0820f"></span>Saída<span class="block-hint">duplo clique nas barras/KPIs/Top 10 para detalhar</span></div>
+    <div class="filters" id="f-s3"></div>
+    <div class="grid">
+      <div class="card"><h3>Saída por Hora — Equipe × Operador (fechados)</h3><canvas id="d3-s1-1"></canvas></div>
+      <div class="card"><h3>Saída por Turno — Equipe × Operador</h3><canvas id="d3-s1-2"></canvas></div>
+      <div class="card"><h3>Saída por Hora — por categoria de Saída</h3><canvas id="d3-s1-3"></canvas></div>
+      <div class="card"><h3>Atribuição de Incidentes por Entrada (abertos)</h3><canvas id="d3-s1-4"></canvas></div>
+    </div>
+  </section>
+
+  <section class="segblock" id="seg-m3">
+    <div class="seghead"><span class="dot" style="background:#5f6b7a"></span>Entrada &amp; Saída<span class="block-hint">duplo clique nas barras/KPIs/Top 10 para detalhar</span></div>
+    <div class="filters" id="f-m3"></div>
+    <div class="grid">
+      <div class="card"><h3>Entrada × Saída por Turno</h3><canvas id="d3-m1-1"></canvas></div>
+      <div class="card"><h3>Entrada × Saída por Hora</h3><canvas id="d3-m1-2"></canvas></div>
+      <div class="card"><h3>Entrada × Saída por Hora — Clientes (Clts Atual)</h3><canvas id="d3-m1-3"></canvas></div>
+    </div>
+  </section>
+
+  <section class="segblock" id="seg-o3">
+    <div class="seghead"><span class="dot" style="background:#1a7f37"></span>Em Aberto<span class="block-hint">duplo clique nas barras/KPIs/Top 10 para detalhar</span></div>
+    <div class="filters" id="f-o3"></div>
+    <div class="grid g5">
+      <div class="card"><h3>Abertas Hoje — BT</h3><canvas id="d3-o1-1"></canvas></div>
+      <div class="card"><h3>Abertas Ontem — BT</h3><canvas id="d3-o1-2"></canvas></div>
+      <div class="card"><h3>Abertas Dias Anteriores — BT</h3><canvas id="d3-o1-3"></canvas></div>
+      <div class="card span2x2"><h3>Clientes em Aberto (Clts Atual)</h3><canvas id="d3-o1-7"></canvas></div>
+      <div class="card"><h3>Abertas Hoje — MT</h3><canvas id="d3-o1-4"></canvas></div>
+      <div class="card"><h3>Abertas Ontem — MT</h3><canvas id="d3-o1-5"></canvas></div>
+      <div class="card"><h3>Abertas Dias Anteriores — MT</h3><canvas id="d3-o1-6"></canvas></div>
+    </div>
+  </section>
+
+  <section class="segblock" id="seg-x31">
+    <div class="seghead"><span class="dot" style="background:#d1242f"></span>+24h<span class="block-hint">duplo clique nas barras/KPIs/Top 10 para detalhar</span></div>
+    <div class="filters" id="f-x31"></div>
+    <div class="grid">
+      <div class="card"><h3>+24h — Abertos × Fechados Hoje</h3><div class="stack"><div class="card vcard"><div class="v" id="d3-x24-sim">0</div><div class="l">Abertos</div></div><div class="card vcard"><div class="v" id="d3-x24-nao">0</div><div class="l">Fechados Hoje</div></div></div></div>
+      <div class="card"><h3>+24h Ontem — Aberto × Fechado Hoje</h3><canvas id="d3-x1b"></canvas></div>
+      <div class="card"><h3>+24h Dias Anteriores — Aberto × Fechado Hoje</h3><canvas id="d3-x1c"></canvas></div>
+    </div>
+  </section>
+
+  <section class="segblock" id="seg-xO3">
+    <div class="seghead"><span class="dot" style="background:#0969da"></span>OSM<span class="block-hint">duplo clique nas barras/KPIs/Top 10 para detalhar</span></div>
+    <div class="filters" id="f-xO3"></div>
+    <div class="grid">
+      <div class="card"><h3>Entrada × Saída por Hora — OSM (Sim)</h3><canvas id="d3-xO-1"></canvas></div>
+      <div class="card"><h3>OSM — Sim × Não</h3><div class="stack"><div class="card vcard"><div class="v" id="d3-xO-sim">0</div><div class="l">Sim</div></div><div class="card vcard"><div class="v" id="d3-xO-nao">0</div><div class="l">Não</div></div></div></div>
+    </div>
+  </section>
+
+  <section class="segblock" id="seg-x32">
+    <div class="seghead"><span class="dot" style="background:#8250df"></span>Ordem 2<span class="block-hint">duplo clique nas barras/KPIs/Top 10 para detalhar</span></div>
+    <div class="filters" id="f-x32"></div>
+    <div class="grid">
+      <div class="card"><h3>Ordem 2 — Fechados Hoje (sim × não)</h3><div class="stack"><div class="card vcard"><div class="v" id="d3-x2-sim">0</div><div class="l">Sim</div></div><div class="card vcard"><div class="v" id="d3-x2-nao">0</div><div class="l">Não</div></div></div></div>
+      <div class="card"><h3>Ordem 2 — Fechados Hoje (sim × não)</h3><canvas id="d3-x1-2"></canvas></div>
+    </div>
+  </section>
+
+  <section class="segblock" id="seg-x33">
+    <div class="seghead"><span class="dot" style="background:#0aa2a2"></span>5 Regras<span class="block-hint">duplo clique nas barras/KPIs/Top 10 para detalhar</span></div>
+    <div class="filters" id="f-x33"></div>
+    <div class="grid">
+      <div class="card"><h3>5 Regras de Ouro — Fechados Hoje MT (S × N)</h3><div class="stack"><div class="card vcard"><div class="v" id="d3-x3-sim">0</div><div class="l">S</div></div><div class="card vcard"><div class="v" id="d3-x3-nao">0</div><div class="l">N</div></div></div></div>
+      <div class="card"><h3>5 Regras de Ouro — Fechados Hoje MT (S × N)</h3><canvas id="d3-x1-3"></canvas></div>
     </div>
   </section>
 </div>
@@ -891,10 +1007,12 @@ function metaDias(){
 
 // ---- navegação ----
 let tab='d1';
+let PID='d1';
+let CUR_SUB='';
 const BUILD_AT='__BUILD_AT__';
 
 // ---- filtros universais (UT, Polo, NT) ----
-const UF={d1:{},d2:{}};
+const UF={d1:{},d2:{},d3:{}};
 function passes(r,F){
   if(F.p&&!F.p.all&&!F.p.sel.has(r.p)) return false;
   if(F.suc&&!F.suc.all&&!F.suc.sel.has(r.suc)) return false;
@@ -904,6 +1022,8 @@ function passes(r,F){
   if(F.ts&&!F.ts.all&&!F.ts.sel.has(r.ts)) return false;
   if(F.nt&&!F.nt.all&&!F.nt.sel.has(r.nt)) return false;
   if(F.gpd&&!F.gpd.all&&!F.gpd.sel.has(r.gpd)) return false;
+  if(F.mes&&!F.mes.all&&!F.mes.sel.has(r.mes)) return false;
+  if(F.dia&&!F.dia.all&&!F.dia.sel.has(r.dia)) return false;
   if(F.ut){
     if(!F.ut.all){
       const a=F.ut.sel.has('UTS')&&UTS.includes(r.p);
@@ -917,6 +1037,7 @@ function passes(r,F){
 const TOP_CONF={
   d1:[['ut','UT','ut',['UTS','UTN']],['p','Polo','p',polos()],['suc','Sucursal','suc',()=>sucPool()],['nt','NT','nt',nts()],['gpd','Grupo Processos (Eq. Desl.)','gpd',()=>distinct('gpd')]],
   d2:[['ut','UT','ut',['UTS','UTN']],['p','Polo','p',polos()],['suc','Sucursal','suc',()=>sucPool()],['nt','NT','nt',nts()],['gpd','Grupo Processos (Eq. Desl.)','gpd',()=>distinct('gpd')]],
+  d3:[['mes','Mês','mes',()=>distinct('mes')],['dia','Dia','dia',()=>distinct('dia')]],
 };
 
 // ---- filtros multi-seleção ----
@@ -978,7 +1099,7 @@ function makeFilter(cur, pool){
 
 // ---- filtros universais por aba ----
 function buildTopFilters(t){
-  const cont=document.getElementById(t==='d1'?'f-top1':'f-top2');
+  const cont=document.getElementById(t==='d1'?'f-top1':(t==='d2'?'f-top2':'f-top3'));
   cont.innerHTML='';
   const F={};
   TOP_CONF[t].forEach(([k,label,prop,pool])=>{
@@ -1007,6 +1128,7 @@ const SUB_CONF={
   m1:{keys:[['e','Entrada','e',ents()],['sd','Saída','sd',sds()]],defs:{e:['Hoje'],sd:['Hoje']}},
   o1:{keys:[],defs:{}},
   x1:{keys:[],defs:{}},
+  xO:{keys:[['e','Entrada','e',ents()],['sd','Saída','sd',sds()]],defs:{e:['Hoje'],sd:['Hoje']}},
   x2:{keys:[],defs:{}},
   x3:{keys:[],defs:{}},
   e2:{keys:[['e','Entrada','e',ents()],['sd','Saída','sd',sds()],['ta','Turno Entrada','ta',TURN],['ts','Turno Saída','ts',TURN]],defs:{e:['Hoje']}},
@@ -1014,6 +1136,14 @@ const SUB_CONF={
   o2:{keys:[['e','Entrada','e',ents()]],defs:{}},
   t2:{keys:[['e','Entrada','e',ents()],['sd','Saída','sd',sds()],['ta','Turno Entrada','ta',TURN],['ts','Turno Fechamento','ts',TURN]],defs:{}},
   p2:{keys:[['e','Entrada','e',ents()],['sd','Saída','sd',sds()],['ta','Turno Entrada','ta',TURN],['ts','Turno Fechamento','ts',TURN]],defs:{}},
+  e3:{keys:[['e','Entrada','e',ents()],['sd','Saída','sd',sds()],['ta','Turno Entrada','ta',TURN],['ts','Turno Saída','ts',TURN]],defs:{e:['Hoje']}},
+  s3:{keys:[['e','Entrada','e',ents()],['sd','Saída','sd',sds()],['ta','Turno Entrada','ta',TURN],['ts','Turno Saída','ts',TURN]],defs:{sd:['Hoje']}},
+  m3:{keys:[['e','Entrada','e',ents()],['sd','Saída','sd',sds()]],defs:{e:['Hoje'],sd:['Hoje']}},
+  o3:{keys:[],defs:{}},
+  x31:{keys:[],defs:{}},
+  xO3:{keys:[['e','Entrada','e',ents()],['sd','Saída','sd',sds()]],defs:{e:['Hoje'],sd:['Hoje']}},
+  x32:{keys:[],defs:{}},
+  x33:{keys:[],defs:{}},
 };
 const FSTATE={};
 function sucPool(){
@@ -1040,7 +1170,7 @@ function buildFilters(sub){
 function segBase(sub){
   const U=UF[tab]||{};
   const F=FSTATE[sub]||{};
-  const C={ut:U.ut,p:U.p,suc:U.suc,nt:U.nt,gpd:U.gpd,e:F.e,sd:F.sd,ta:F.ta,ts:F.ts};
+  const C={ut:U.ut,p:U.p,suc:U.suc,nt:U.nt,gpd:U.gpd,mes:U.mes,dia:U.dia,e:F.e,sd:F.sd,ta:F.ta,ts:F.ts};
   return RAW.filter(r=>passes(r,C));
 }
 function plOf(base){ return polos().filter(p=>base.some(r=>r.p===p)); }
@@ -1187,6 +1317,7 @@ function handleTotClick(id, chart, ev){
   }
 }
 function renderChart(id, labels, series, o){
+  if(PID==='d3') id='d3-'+id;
   o=o||{};
   const datasets=series.map(s=>{
     const d={label:s.name,data:labels.map(lab=>(s.val?s.val(s.rows(lab)):s.wt?sumKey(s.rows(lab),s.wt):s.rows(lab).length))};
@@ -1245,10 +1376,10 @@ function buildE1(base){
     {name:'Equipe',color:BLUE[0],rows:v=>reinc.filter(r=>r.rt===v&&r.eo==='equipe')},
     {name:'Operador',color:BLUE[1],rows:v=>reinc.filter(r=>r.rt===v&&r.eo==='operador')},
   ],{stacked:true});
-  const ca=tally(reinc.filter(r=>r.ca!=='---'),['ca']);
+  const ca=tally(reinc.filter(r=>!['---','-'].includes(r.ca)),['ca']);
   const caK=Object.keys(ca).sort((a,b)=>ca[b]-ca[a]).slice(0,15);
   renderChart('e1-4',caK,[{name:'Qtd',color:BLUE[0],rows:k=>reinc.filter(r=>r.ca===k)}],{indexAxis:'y'});
-  const eqm=tally(reinc.filter(r=>!['---','','SEM EQUIPE','GENERICA'].includes(r.eqd)),['eqd']);
+  const eqm=tally(reinc.filter(r=>!['---','-','','SEM EQUIPE','GENERICA'].includes(r.eqd)),['eqd']);
   const eqK=Object.keys(eqm).sort((a,b)=>eqm[b]-eqm[a]).slice(0,10);
   const re4=REIN.filter(v=>reinc.some(r=>r.rt===v));
   renderChart('e1-5',eqK,re4.map((v,i)=>({name:v,color:BLUE[i%BLUE.length],rows:eq=>reinc.filter(r=>r.eqd===eq&&r.rt===v)})),{});
@@ -1267,7 +1398,7 @@ function buildS1(base){
   const eK=ENTR_ORD.filter(v=>fe.some(r=>r.e===v));
   renderChart('s1-3',HOUR_LAB,eK.map((v,i)=>({name:v,color:ORANGE[i%ORANGE.length],rows:h=>fe.filter(r=>r.e===v).filter(r=>parseInt(r.hs,10)===parseInt(h,10))})),{});
   const U=UF[tab]||{};
-  const F=FSTATE['s1']||{};
+  const F=FSTATE[CUR_SUB]||{};
   const C4={ut:U.ut,p:U.p,suc:U.suc,nt:U.nt,gpd:U.gpd,e:F.e,sd:{all:false,sel:new Set(['Aberto'])},ta:F.ta,ts:F.ts};
   const ab4=RAW.filter(r=>passes(r,C4));
   renderChart('s1-4',ENTR_ORD,[
@@ -1291,11 +1422,16 @@ function buildM1(base){
     {name:'Saída (clientes)',color:'#d1242f',area:'rgba(209,36,47,.12)',wt:'ct',rows:i=>base.filter(r=>r.s==='Fechado').filter(r=>parseInt(r.hs,10)===parseInt(i,10))},
     {name:'Saída Equipe (clientes)',color:'#1a7f37',area:'rgba(26,127,55,.12)',wt:'ct',rows:i=>base.filter(r=>r.s==='Fechado'&&r.eo==='equipe').filter(r=>parseInt(r.hs,10)===parseInt(i,10))},
   ],{type:'line'});
+}
+
+function buildXO(base){
   const osm=base.filter(r=>String(r.osm).toUpperCase()==='SIM');
-  renderChart('m1-4',HOUR_LAB,[
+  renderChart('xO-1',HOUR_LAB,[
     {name:'Entrada OSM',color:'#1f6feb',area:'rgba(31,111,235,.12)',rows:i=>osm.filter(r=>parseInt(r.he,10)===parseInt(i,10))},
     {name:'Saída OSM',color:'#d1242f',area:'rgba(209,36,47,.12)',rows:i=>osm.filter(r=>r.s==='Fechado').filter(r=>parseInt(r.hs,10)===parseInt(i,10))},
   ],{type:'line'});
+  setVCard('xO-sim',base.filter(r=>String(r.osm).toUpperCase()==='SIM').length);
+  setVCard('xO-nao',base.filter(r=>String(r.osm).toUpperCase()==='NÃO').length);
 }
 
 function buildO1(base){
@@ -1331,6 +1467,7 @@ function fillKpis(id,items){
 }
 const fmtN=n=>Number(n||0).toLocaleString('pt-BR');
 function setVCard(id,v){
+  if(PID==='d3') id='d3-'+id;
   const el=document.getElementById(id);
   if(el) el.textContent=fmtN(v);
 }
@@ -1411,9 +1548,9 @@ function buildT2(base){
   const pl=plOf(base);
   renderChart('t2-1',pl,[{name:'Qtd',color:'#1f6feb',rows:p=>cons.filter(r=>r.p===p)}],{});
   const fe=base.filter(r=>r.s==='Fechado');
-  const eqm=tally(fe.filter(r=>!['---','','SEM EQUIPE','GENERICA'].includes(r.eqd)),['eqd']);
+  const eqm=tally(fe.filter(r=>!['---','-','','SEM EQUIPE','GENERICA'].includes(r.eqd)),['eqd']);
   const eqK=Object.keys(eqm).sort((a,b)=>eqm[b]-eqm[a]).slice(0,20);
-  renderChart('t2-2',eqK,[{name:'Qtd',color:'#f0820f',rows:k=>fe.filter(r=>r.eqd===k&&!['---','','SEM EQUIPE','GENERICA'].includes(r.eqd))}],{indexAxis:'y'});
+  renderChart('t2-2',eqK,[{name:'Qtd',color:'#f0820f',rows:k=>fe.filter(r=>r.eqd===k&&!['---','-','','SEM EQUIPE','GENERICA'].includes(r.eqd))}],{indexAxis:'y'});
   renderChart('t2-3',pl,[{name:'Média TMA',color:'#1f6feb',rows:p=>cons.filter(r=>r.p===p),val:rows=>meanKey(rows,'tma')}],{});
 }
 function buildP2(base){
@@ -1453,7 +1590,7 @@ function buildKPIs(){
   const fe=base.filter(r=>r.s==='Fechado');
   const hoje=base.filter(r=>r.e==='Hoje');
   const feHoje=fe.filter(r=>r.sd==='Hoje');
-  const dCount=(rows,key)=>{const s=new Set(rows.map(r=>r[key]).filter(v=>v&&v!==''&&v!=='---'));return s.size;};
+  const dCount=(rows,key)=>{const s=new Set(rows.map(r=>r[key]).filter(v=>v&&v!==''&&v!=='---'&&v!=='-'));return s.size;};
   kpiRows={
     abH:ab.filter(r=>r.e==='Hoje'),
     abO:ab.filter(r=>r.e==='Ontem'),
@@ -1515,7 +1652,7 @@ function buildKPIs(){
       boxes.push({cls:'',k:'prod_'+p,v:fmt1(rp.length/den),l:'Produção '+p});
     });
   }
-  const el=document.getElementById(tab==='d1'?'k1':'k2');
+  const el=document.getElementById(tab==='d3'?'k3':(tab==='d1'?'k1':'k2'));
   el.innerHTML=boxes.map(b=>`<div class="kpi ${b.cls}" data-k="${b.k}"><div class="v">${b.v}</div><div class="l">${b.l}</div></div>`).join('');
 }
 
@@ -1529,7 +1666,7 @@ function buildTop10(){
   topData=ab.slice().sort((a,b)=>(Number(b.ct)||0)-(Number(a.ct)||0)).slice(0,10);
   const topSum=topData.reduce((a,r)=>a+(Number(r.ct)/totalCt*100),0);
   const topClts=topData.reduce((a,r)=>a+Number(r.ct),0);
-  const el=document.getElementById(tab==='d1'?'top1':'top2');
+  const el=document.getElementById(tab==='d3'?'top3':(tab==='d1'?'top1':'top2'));
   el.innerHTML='<table class="top"><tr><th>Número</th><th>NT</th><th>Polo</th><th>Alimentador</th><th>Causa</th><th>Atribuição</th><th>OSM</th><th class="num">Clts Atual Σ '+topClts.toLocaleString('pt-BR')+'</th><th class="num">% Σ '+topSum.toLocaleString('pt-BR',{maximumFractionDigits:1})+'%</th></tr>'+
     topData.map((r,i)=>`<tr data-i="${i}"><td>${esc(r.n)}</td><td>${esc(r.nt)}</td><td>${esc(r.p)}</td><td>${esc(r.al)}</td><td>${esc(r.ca)}</td><td>${esc(r.eq)}</td><td>${esc(r.osm)}</td><td class="num">${Number(r.ct).toLocaleString('pt-BR')}</td><td class="num">${(Number(r.ct)/totalCt*100).toFixed(1)}%</td></tr>`).join('')+
     '</table>';
@@ -1746,7 +1883,7 @@ function renderDrillTeams(body){
   const seen=new Map();
   drillRows.forEach(r=>{
     const v=r[drillField];
-    if(!v||v===''||v==='---') return;
+    if(!v||v===''||v==='---'||v==='-') return;
     if(!seen.has(v)) seen.set(v,[]);
     seen.get(v).push(String(r.n||''));
   });
@@ -1805,12 +1942,12 @@ function exportResumo(t){
   const lines=[];
   lines.push('DataHub Dashboard de Incidências — Resumo consolidado');
   lines.push('Exportado em;'+new Date().toLocaleString('pt-BR'));
-  lines.push('Aba;'+(tid==='d1'?'Dashboard (1 polo)':'Dashboard 2 (todos os polos)'));
+  lines.push('Aba;'+(tid==='d1'?'Dashboard (1 polo)':(tid==='d3')?'Dashboard 3 (Mês/Dia)':'Dashboard 2 (todos os polos)'));
   lines.push('Período;'+metaDias());
   lines.push('Registros (base);'+RAW.filter(r=>passes(r,UF[tid]||{})).length);
   lines.push('');
   lines.push('KPIs;Valor');
-  const kcont=document.getElementById(tid==='d1'?'k1':'k2');
+  const kcont=document.getElementById(tid==='d3'?'k3':(tid==='d1'?'k1':'k2'));
   kcont.querySelectorAll('.kpi').forEach(k=>{
     lines.push(csvCell(k.querySelector('.l').textContent.trim())+';'+csvCell(k.querySelector('.v').textContent.trim()));
   });
@@ -1960,12 +2097,14 @@ function sw(id){
   document.querySelectorAll('.tab').forEach(b=>b.classList.toggle('active',b.dataset.tab===id));
   document.getElementById('d1').classList.toggle('active',id==='d1');
   document.getElementById('d2').classList.toggle('active',id==='d2');
+  document.getElementById('d3').classList.toggle('active',id==='d3');
   document.getElementById('inst').classList.toggle('active',id==='inst');
   renderPage();
 }
 function renderSub(sub){
+  CUR_SUB=sub;
   const base=segBase(sub);
-  const fns={e1:buildE1,s1:buildS1,m1:buildM1,o1:buildO1,x1:buildX1,x2:buildX2,x3:buildX3,e2:buildE2,s2:buildS2,o2:buildO2,t2:buildT2,p2:buildP2};
+  const fns={e1:buildE1,s1:buildS1,m1:buildM1,o1:buildO1,x1:buildX1,xO:buildXO,x2:buildX2,x3:buildX3,e2:buildE2,s2:buildS2,o2:buildO2,t2:buildT2,p2:buildP2,e3:buildE1,s3:buildS1,m3:buildM1,o3:buildO1,x31:buildX1,xO3:buildXO,x32:buildX2,x33:buildX3};
   if(fns[sub]) fns[sub](base);
 }
 function renderPage(){
@@ -1974,16 +2113,17 @@ function renderPage(){
     document.getElementById('meta-info').textContent='';
     return;
   }
+  PID=(tab==='d3')?'d3':'d1';
   buildKPIs();
   buildTop10();
-  const segs=(tab==='d1')?['e1','s1','m1','o1','x1','x2','x3']:['e2','s2','o2','t2','p2'];
+  const segs=(tab==='d1')?['e1','s1','m1','o1','x1','xO','x2','x3']:(tab==='d3')?['e3','s3','m3','o3','x31','xO3','x32','x33']:['e2','s2','o2','t2','p2'];
   segs.forEach(sub=>renderSub(sub));
   const U=UF[tab]||{};
-  document.getElementById('sub-info').textContent=(tab==='d1')?'Dashboard (1 polo)':'Dashboard 2 (todos os polos)';
+  document.getElementById('sub-info').textContent=(tab==='d1')?'Dashboard (1 polo)':(tab==='d3')?'Dashboard 3 (Mês/Dia)':'Dashboard 2 (todos os polos)';
   document.getElementById('meta-info').textContent='Período: últimos 7 dias — Última atualização: '+BUILD_AT;
 }
 function bindSegBars(){
-  ['segbar1','segbar2'].forEach(id=>{
+  ['segbar1','segbar2','segbar3'].forEach(id=>{
     document.getElementById(id).addEventListener('click',e=>{
       const b=e.target.closest('.segbtn');
       if(!b) return;
@@ -1997,6 +2137,7 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape'){closeModal();closeD
 // ---- init ----
 buildTopFilters('d1');
 buildTopFilters('d2');
+buildTopFilters('d3');
 Object.keys(SUB_CONF).forEach(sub=>buildFilters(sub));
 bindSegBars();
 bindDrill();

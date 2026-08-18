@@ -13,12 +13,14 @@ from pathlib import Path
 from config import load_config, AppConfig
 from core.scheduler import Scheduler
 from core.downloader.geonline import baixar_incidencias
+from core.downloader.operview import baixar_incidencias as baixar_operview
 from core.processors.incidencias import tratar_incidencias, gerar_analises_n8n
 from core.processors.dashboard_html import gerar_dashboard_html
 from core.base_mensal import atualizar_base_mensal
 from integrations.sharepoint import sincronizar
 from integrations.n8n import enviar
 from ui.main_window import MainWindow
+from PyQt6.QtWidgets import QApplication
 
 # ── Polo filter helpers ───────────────────────────────────────────────────────
 
@@ -77,6 +79,7 @@ class App:
             on_parar=self._parar,
             on_tratar=self._tratar,
         )
+        self._window.quit_signal.connect(self._encerrar)
 
     def run(self):
         self._window.mainloop()
@@ -119,6 +122,23 @@ class App:
             self._scheduler.stop()
         self._log("⏹ Execução interrompida pelo usuário.")
 
+    def _encerrar(self):
+        self._parar()
+        try:
+            self._window._tray.hide()
+        except Exception:
+            pass
+        app = QApplication.instance()
+        if app:
+            app.quit()
+
+    def _notificar_operview(self, login_event=None):
+        """Dispara a notificação de login na GUI (thread-safe via sinal)."""
+        try:
+            self._window.operview_login_signal.emit(login_event)
+        except Exception:
+            pass
+
     # ── Fluxo principal ───────────────────────────────────────────────────────
 
     def _executar_fluxo(self, selecionados: dict, data_ini: datetime, data_fim: datetime,
@@ -151,10 +171,19 @@ class App:
 
         if selecionados.get("geonline"):
             try:
-                self._log("📥 Baixando GeoOnline — Incidências...")
-                arquivo = baixar_incidencias(
-                    cfg.geonline, pasta, data_ini, data_fim, self._log, token,
-                    polo=polo,
+                if cfg.origem_relatorio == "operview":
+                    self._log("📥 Baixando Operview — Incidências...")
+                    baixar = baixar_operview
+                    cfg_dl = cfg.operview
+                    kwargs = {"notificar": self._notificar_operview}
+                else:
+                    self._log("📥 Baixando GeoOnline — Incidências...")
+                    baixar = baixar_incidencias
+                    cfg_dl = cfg.geonline
+                    kwargs = {}
+                arquivo = baixar(
+                    cfg_dl, pasta, data_ini, data_fim, self._log, token,
+                    polo=polo, **kwargs,
                 )
 
                 if token and token.is_set():
@@ -222,7 +251,7 @@ class App:
                     self._log("  ⏭️  Envio n8n desativado.")
 
             except Exception as e:
-                self._log(f"❌ GeoOnline falhou: {e}")
+                self._log(f"❌ Falha no download de incidências: {e}")
 
         if cfg.sharepoint.enabled and cfg.sharepoint.pasta:
             if token and token.is_set():
@@ -256,6 +285,12 @@ class App:
             try:
                 log_fn(f"📄 Tratando: {arquivo.name}")
                 df = tratar_incidencias(arquivo, log_fn)
+                _win = getattr(self, "_window", None)
+                if _win is not None and hasattr(_win, "formato_signal"):
+                    try:
+                        _win.formato_signal.emit(df.attrs.get("formato", "Desconhecido"))
+                    except Exception:
+                        pass
                 df = _filtrar_polo(df, polo, log_fn)
                 if polo != "Todos os polos":
                     log_fn(f"  🔍 Polo: {polo} — {len(df)} linhas após filtro")

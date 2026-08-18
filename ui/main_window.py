@@ -25,6 +25,7 @@ from PyQt6.QtWidgets import (
     QLabel, QPushButton, QComboBox, QRadioButton, QButtonGroup,
     QLineEdit, QCheckBox, QPlainTextEdit, QFileDialog, QMessageBox,
     QDateEdit, QFrame, QStackedWidget, QCalendarWidget, QDialog, QScrollArea,
+    QSystemTrayIcon, QMenu,
 )
 
 from config import AppConfig, save_config
@@ -357,6 +358,9 @@ class MainWindow(QMainWindow):
     rodando_signal = pyqtSignal(bool)
     tratando_signal = pyqtSignal(bool)
     concluido_signal = pyqtSignal(str)
+    formato_signal = pyqtSignal(str)
+    operview_login_signal = pyqtSignal(object)
+    quit_signal = pyqtSignal()
 
     def __init__(self, cfg: AppConfig, on_executar: Callable,
                  on_parar: Callable, on_tratar: Callable):
@@ -368,6 +372,7 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.setWindowTitle("DataHub")
         self.setWindowIcon(QIcon(_resolve("appicon.ico")))
+        self._init_tray()
         self.setGeometry(100, 60, 620, 620)
         self.setMinimumSize(620, 620)
 
@@ -384,6 +389,8 @@ class MainWindow(QMainWindow):
         self.log_trat_signal.connect(self._append_log_trat)
         self.rodando_signal.connect(self._set_rodando)
         self.tratando_signal.connect(self._set_tratando)
+        self.formato_signal.connect(self._set_formato)
+        self.operview_login_signal.connect(self._mostrar_aviso_login)
         self.concluido_signal.connect(self._mostrar_concluido)
 
         self._app.setStyleSheet(_build_style(self._tema))
@@ -609,6 +616,8 @@ class MainWindow(QMainWindow):
         arq1.addWidget(self._arquivo_var, stretch=1)
         arq1.addWidget(self._browse_btn(self._browse_arquivo))
         ft.addLayout(arq1)
+        self._fmt_var = QLabel("Formato detectado: —", objectName="PageSub")
+        ft.addWidget(self._fmt_var)
         v.addWidget(self._card(self._frm_tratar))
 
         self._frm_conversor = QWidget()
@@ -688,6 +697,23 @@ class MainWindow(QMainWindow):
         v.setSpacing(14)
         self._vars_cfg = {}
 
+        orig = QWidget()
+        ov = QVBoxLayout(orig)
+        ov.setContentsMargins(0, 0, 0, 0)
+        ov.setSpacing(10)
+        ov.addWidget(QLabel("Origem do relatório", objectName="SectionLabel"))
+        self._origem_var = QButtonGroup(self)
+        orig_row = QHBoxLayout()
+        orig_row.setSpacing(18)
+        for txt, val in (("GeoOnline", "geonline"), ("Operview", "operview")):
+            rb = QRadioButton(txt)
+            self._origem_var.addButton(rb, 0 if val == "geonline" else 1)
+            if val == "geonline":
+                rb.setChecked(True)
+            orig_row.addWidget(rb)
+        ov.addLayout(orig_row)
+        v.addWidget(self._card(orig))
+
         geo = QWidget()
         g = QVBoxLayout(geo)
         g.setContentsMargins(0, 0, 0, 0)
@@ -709,6 +735,27 @@ class MainWindow(QMainWindow):
             row.addWidget(var, stretch=1)
             g.addLayout(row)
         v.addWidget(self._card(geo))
+
+        opv = QWidget()
+        op = QVBoxLayout(opv)
+        op.setContentsMargins(0, 0, 0, 0)
+        op.setSpacing(10)
+        op.addWidget(QLabel("Operview", objectName="SectionLabel"))
+        for label, key, secret in (
+            ("URL", "opv_url", False),
+            ("Login", "opv_login", False),
+            ("Senha", "opv_senha", True),
+        ):
+            row = QHBoxLayout()
+            row.setSpacing(10)
+            row.addWidget(QLabel(label))
+            var = QLineEdit()
+            if secret:
+                var.setEchoMode(QLineEdit.EchoMode.Password)
+            self._vars_cfg[key] = var
+            row.addWidget(var, stretch=1)
+            op.addLayout(row)
+        v.addWidget(self._card(opv))
 
         apar = QWidget()
         ap = QVBoxLayout(apar)
@@ -956,6 +1003,12 @@ class MainWindow(QMainWindow):
         self._vars_cfg["geo_conta"].setText(cfg.geonline.conta)
         self._vars_cfg["geo_login"].setText(cfg.geonline.login)
         self._vars_cfg["geo_senha"].setText(cfg.geonline.senha)
+        self._vars_cfg["opv_url"].setText(cfg.operview.url)
+        self._vars_cfg["opv_login"].setText(cfg.operview.login)
+        self._vars_cfg["opv_senha"].setText(cfg.operview.senha)
+        for rb in self._origem_var.buttons():
+            if self._origem_var.id(rb) == (1 if cfg.origem_relatorio == "operview" else 0):
+                rb.setChecked(True)
         self._vars_cfg["pasta_local"].setText(cfg.pasta_local)
         self._vars_cfg["sp_enabled"].setChecked(cfg.sharepoint.enabled)
         self._vars_cfg["sp_pasta"].setText(cfg.sharepoint.pasta)
@@ -972,6 +1025,13 @@ class MainWindow(QMainWindow):
         cfg.geonline.conta = self._vars_cfg["geo_conta"].text().strip()
         cfg.geonline.login = self._vars_cfg["geo_login"].text().strip()
         cfg.geonline.senha = self._vars_cfg["geo_senha"].text().strip()
+        cfg.operview.url = self._vars_cfg["opv_url"].text().strip()
+        cfg.operview.login = self._vars_cfg["opv_login"].text().strip()
+        cfg.operview.senha = self._vars_cfg["opv_senha"].text().strip()
+        cfg.origem_relatorio = (
+            "operview" if self._origem_var.id(self._origem_var.checkedButton()) == 1
+            else "geonline"
+        )
         cfg.pasta_local = self._vars_cfg["pasta_local"].text().strip()
         cfg.sharepoint.enabled = self._vars_cfg["sp_enabled"].isChecked()
         cfg.sharepoint.pasta = self._vars_cfg["sp_pasta"].text().strip()
@@ -1051,11 +1111,65 @@ class MainWindow(QMainWindow):
     def _set_tratando(self, tratando: bool):
         self._btn_tratar.setEnabled(not tratando)
 
+    def _set_formato(self, fmt: str):
+        self._fmt_var.setText(f"Formato detectado: {fmt or '—'}")
+
+    # ── Ícone na bandeja do sistema ────────────────────────────────────────────
+    def _init_tray(self):
+        icon = QIcon(_resolve("appicon.ico"))
+        self._tray = QSystemTrayIcon(icon, self)
+        self._tray.setToolTip("DataHub")
+        menu = QMenu()
+        act_abrir = menu.addAction("Abrir")
+        act_abrir.triggered.connect(self._mostrar_e_focar)
+        act_sair = menu.addAction("Sair")
+        act_sair.triggered.connect(self._sair)
+        self._tray.setContextMenu(menu)
+        self._tray.activated.connect(
+            lambda r: self._mostrar_e_focar()
+            if r == QSystemTrayIcon.ActivationReason.Trigger else None)
+        self._tray.show()
+
+    def _mostrar_e_focar(self):
+        self.showNormal()
+        self.show()
+        self.raise_()
+        self.activateWindow()
+
+    def _sair(self):
+        try:
+            self.quit_signal.emit()
+        except Exception:
+            pass
+
+    def closeEvent(self, event):
+        event.ignore()
+        self.hide()
+        try:
+            self._tray.showMessage(
+                "DataHub",
+                "O app continua na bandeja do sistema (clique no ícone para abrir).",
+                QSystemTrayIcon.MessageIcon.Information, 2500)
+        except Exception:
+            pass
+
+    def mostrar_execucao(self):
+        self._stack.setCurrentIndex(0)
+
     def mostrar_concluido(self, mensagem: str = "Fluxo concluído com sucesso!"):
         self.concluido_signal.emit(mensagem)
 
     def _mostrar_concluido(self, mensagem: str):
         QMessageBox.information(self, "DataHub", mensagem)
+
+    def _mostrar_aviso_login(self, login_event):
+        QMessageBox.information(
+            self, "Operview — Login necessário",
+            "O download do Operview precisa de login.\n\n"
+            "Faça o login no navegador que foi aberto e clique OK para continuar.",
+        )
+        if login_event is not None:
+            login_event.set()
 
     # ── Loop ───────────────────────────────────────────────────────────────────
 

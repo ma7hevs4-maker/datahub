@@ -15,6 +15,14 @@ warnings.filterwarnings("ignore", category=UserWarning, module="openpyxl")
 
 SHEET_NAME = "Relatorio_de_Incidencias"
 
+# Colunas exclusivas adicionadas pelo relatório Operview (ausentes no GeoOnline).
+# Usadas para detectar automaticamente qual formato de origem está sendo tratado.
+OPVIEW_MARKERS = [
+    "Data Escalonamento", "Números Avisos", "Números Protocolos",
+    "Matrícula Chefe de Turma", "Nome Chefe de Turma",
+    "Matrícula Componente", "Nome Componente", "Canal Comunicação",
+]
+
 
 def _sem_acento(texto: str) -> str:
     return unicodedata.normalize("NFKD", texto).encode("ASCII", "ignore").decode("ASCII")
@@ -118,7 +126,7 @@ MAPA_GRUPO = {
 
 def _converter_duracao(valor) -> int:
     s = str(valor).strip()
-    if s in ("", "---", "nan", "None", "0"):
+    if s in ("", "---", "-", "nan", "None", "0"):
         return 0
     if ":" in s:
         partes = s.split(":")
@@ -194,6 +202,20 @@ def tratar_incidencias(caminho: Path, log_fn=print) -> pd.DataFrame:
 
     log_fn(f"  📋 {len(df)} linhas, {len(df.columns)} colunas carregadas")
 
+    # Sentinela de "sem dado": GeoOnline usa "---" e Operview usa "-".
+    # Unificamos "-" -> "---" para todo o tratamento e o dashboard funcionarem iguais.
+    for _c in df.columns:
+        if df[_c].dtype == object:
+            df[_c] = df[_c].apply(
+                lambda v: "---" if (isinstance(v, str) and v.strip() == "-") else v)
+
+    # Detecta o formato de origem (Operview adiciona 8 colunas específicas).
+    # Ambos os formatos são tratados da mesma forma (colunas nomeadas); isto
+    # serve apenas para reconhecimento/exibição.
+    formato = "Operview" if any(m in df.columns for m in OPVIEW_MARKERS) else "GeoOnline"
+    df.attrs["formato"] = formato
+    log_fn(f"  🔎 Formato detectado: {formato}")
+
     # Remove PROGRAMADO
     if "Estado" in df.columns:
         antes = len(df)
@@ -239,7 +261,7 @@ def tratar_incidencias(caminho: Path, log_fn=print) -> pd.DataFrame:
 
     # Causa normalizada
     df["_causa_norm"] = df["Causa"].astype(str).apply(
-        lambda x: _sem_acento(x.strip().upper())
+        lambda x: _sem_acento(str(x).strip().upper())
     )
 
     # Considerar TMA
@@ -264,7 +286,7 @@ def tratar_incidencias(caminho: Path, log_fn=print) -> pd.DataFrame:
     # Atribuição
     col_eq = "Equipe Atribuída"
     df["Atribuição"] = np.where(
-        df[col_eq].isna() | (df[col_eq].astype(str).str.strip().isin(["---", "", "nan"])),
+        df[col_eq].isna() | (df[col_eq].astype(str).str.strip().isin(["---", "", "nan", "-"])),
         "Não Atribuído", "Atribuído",
     )
 
@@ -394,7 +416,7 @@ def tratar_incidencias(caminho: Path, log_fn=print) -> pd.DataFrame:
     )
     df["_num_cli_temp"] = (
         df[col_num_cli] if col_num_cli else df.iloc[:, 21]
-    ).astype(str).str.strip().replace(["nan", "None", "", "0", "0.0"], "---")
+    ).astype(str).str.strip().replace(["nan", "None", "", "0", "0.0", "-"], "---")
 
     mask_base = (
         df["Produtivo/Improdutivo"].isin(["Produtivo", "Produtivo sem afetação"])

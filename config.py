@@ -16,6 +16,13 @@ class GeoOnlineConfig:
 
 
 @dataclass
+class OperviewConfig:
+    url: str = "https://operview-rj.enel.com/"
+    login: str = ""
+    senha: str = ""
+
+
+@dataclass
 class SpotfireConfig:
     url_scanner: str = ""
     url_deslocamentos: str = ""
@@ -38,9 +45,11 @@ class N8nConfig:
 @dataclass
 class AppConfig:
     geonline: GeoOnlineConfig = field(default_factory=GeoOnlineConfig)
+    operview: OperviewConfig = field(default_factory=OperviewConfig)
     spotfire: SpotfireConfig = field(default_factory=SpotfireConfig)
     sharepoint: SharePointConfig = field(default_factory=SharePointConfig)
     n8n: N8nConfig = field(default_factory=N8nConfig)
+    origem_relatorio: str = "geonline"  # "geonline" | "operview"
     pasta_local: str = ""
     webhook_n8n: str = ""
     base_mensal_enabled: bool = True
@@ -69,6 +78,8 @@ def load_config() -> AppConfig:
             data = json.load(f)
         cfg = AppConfig()
         cfg.geonline = _from_dict(GeoOnlineConfig, data.get("geonline", {}))
+        cfg.operview = _from_dict(OperviewConfig, data.get("operview", {}))
+        cfg.origem_relatorio = data.get("origem_relatorio", "geonline")
         cfg.spotfire = _from_dict(SpotfireConfig, data.get("spotfire", {}))
         cfg.sharepoint = _from_dict(SharePointConfig, data.get("sharepoint", {}))
         cfg.n8n = _from_dict(N8nConfig, data.get("n8n", {}))

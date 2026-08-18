@@ -25,10 +25,12 @@ python -m PyInstaller --noconfirm ^
     --onedir ^
     --windowed ^
     --noupx ^
+    --icon "appicon.ico" ^
     --add-data "config.py;." ^
     --add-data "%SELENIUM_DIR%;selenium" ^
     --add-data "core/processors/dashboard_template.html;core/processors" ^
     --add-data "version.txt;." ^
+    --add-data "appicon.ico;." ^
     --hidden-import=pandas ^
     --hidden-import=openpyxl ^
     --hidden-import=selenium ^
@@ -39,6 +41,7 @@ python -m PyInstaller --noconfirm ^
     --hidden-import=core.processors.utilidades ^
     --hidden-import=core.base_mensal ^
     --hidden-import=core.downloader.geonline ^
+    --hidden-import=core.downloader.operview ^
     --hidden-import=core.scheduler ^
     --hidden-import=integrations.sharepoint ^
     --hidden-import=integrations.n8n ^
