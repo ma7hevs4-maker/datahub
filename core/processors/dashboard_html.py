@@ -305,6 +305,7 @@ def gerar_dashboard_html(df, saida=None, log_fn=print):
             "gpd": grupo_d,
             "d": dia,
             "mes": mes,
+            "diaMes": dia,
             "eq": equipe,
             "eqd": equi_d,
             "eo": equi_op,
