@@ -44,7 +44,7 @@ header .sub{color:#c8d4e3;font-size:12px}
 .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:12px}
 .kpi{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:11px 13px;box-shadow:0 1px 2px rgba(16,40,73,.06);cursor:pointer}
 .kpi .v{font-size:24px;font-weight:700;color:#1a7f37}
-.kpi.blue .v{color:var(--acc)} .kpi.red .v{color:#d1242f} .kpi.orange .v{color:#f0820f} .kpi.purple .v{color:#8250df}
+.kpi.blue .v{color:var(--acc)} .kpi.red .v{color:#d1242f} .kpi.orange .v{color:#f0820f} .kpi.purple .v{color:#8250df} .kpi.cyan .v{color:#0aa2a2}
 .kpi .l{color:var(--mut);font-size:11px}
 
 .topbox{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:12px 14px;margin-bottom:14px;box-shadow:0 1px 2px rgba(16,40,73,.06)}
@@ -69,6 +69,9 @@ table.top tbody tr:hover{background:var(--acc2)}
 .grid.g5{grid-template-columns:repeat(5,minmax(0,1fr))}
 .card.span2x2{grid-column:span 2;grid-row:span 2}
 .card.span2x2 canvas{height:592px!important;max-height:none}
+.grid.g-tma{grid-template-columns:repeat(3,minmax(0,1fr))}
+.card.span-all{grid-column:1 / -1}
+@media(max-width:1000px){.grid.g-tma{grid-template-columns:1fr}.card.span-all{grid-column:auto}}
 .stack{display:grid;grid-template-rows:1fr 1fr;gap:14px}
 .vcard{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;min-height:150px;text-align:center}
 .vcard .v{font-size:40px;font-weight:700;line-height:1}
@@ -149,9 +152,10 @@ table.dt tr.team-row td:nth-child(1){font-weight:600}
     <button class="segbtn" data-seg="s1"><span class="dot" style="background:#f0820f"></span>Saída</button>
     <button class="segbtn" data-seg="m1"><span class="dot" style="background:#5f6b7a"></span>Entrada &amp; Saída</button>
     <button class="segbtn" data-seg="o1"><span class="dot" style="background:#1a7f37"></span>Em Aberto</button>
-    <button class="segbtn" data-seg="x1"><span class="dot" style="background:#d1242f"></span>+24h</button>
-    <button class="segbtn" data-seg="x2"><span class="dot" style="background:#8250df"></span>Ordem 2</button>
-    <button class="segbtn" data-seg="x3"><span class="dot" style="background:#0aa2a2"></span>5 Regras</button>
+      <button class="segbtn" data-seg="x1"><span class="dot" style="background:#d1242f"></span>+24h</button>
+      <button class="segbtn" data-seg="xO"><span class="dot" style="background:#0969da"></span>OSM</button>
+      <button class="segbtn" data-seg="x2"><span class="dot" style="background:#8250df"></span>Ordem 2</button>
+      <button class="segbtn" data-seg="x3"><span class="dot" style="background:#0aa2a2"></span>5 Regras</button>
   </div>
 
   <div class="filters" id="f-top1"></div>
@@ -220,8 +224,8 @@ table.dt tr.team-row td:nth-child(1){font-weight:600}
     <div class="seghead"><span class="dot" style="background:#0969da"></span>OSM<span class="block-hint">clique nas barras/KPIs/Top 10 para detalhar</span></div>
     <div class="filters" id="f-xO"></div>
     <div class="grid">
+      <div class="card"><h3>OSM — Entradas × Saídas</h3><div class="stack"><div class="card vcard"><div class="v" id="xO-ent">0</div><div class="l">Entradas (OSM)</div></div><div class="card vcard"><div class="v" id="xO-sai">0</div><div class="l">Saídas (OSM)</div></div></div></div>
       <div class="card"><h3>Entrada × Saída por Hora — OSM (Sim)</h3><canvas id="xO-1"></canvas></div>
-      <div class="card"><h3>OSM — Sim × Não</h3><div class="stack"><div class="card vcard"><div class="v" id="xO-sim">0</div><div class="l">Sim</div></div><div class="card vcard"><div class="v" id="xO-nao">0</div><div class="l">Não</div></div></div></div>
     </div>
   </section>
 
@@ -316,7 +320,8 @@ table.dt tr.team-row td:nth-child(1){font-weight:600}
       <button class="segbtn" data-seg="e3"><span class="dot" style="background:#1f6feb"></span>Entrada</button>
       <button class="segbtn" data-seg="s3"><span class="dot" style="background:#f0820f"></span>Saída</button>
       <button class="segbtn" data-seg="m3"><span class="dot" style="background:#5f6b7a"></span>Entrada &amp; Saída</button>
-      <button class="segbtn" data-seg="o3"><span class="dot" style="background:#1a7f37"></span>Em Aberto</button>
+      <button class="segbtn" data-seg="t3"><span class="dot" style="background:#b08a00"></span>TMA</button>
+      <button class="segbtn" data-seg="o3"><span class="dot" style="background:#1a7f37"></span>Reincidentes</button>
       <button class="segbtn" data-seg="x31"><span class="dot" style="background:#d1242f"></span>+24h</button>
       <button class="segbtn" data-seg="xO3"><span class="dot" style="background:#0969da"></span>OSM</button>
       <button class="segbtn" data-seg="x32"><span class="dot" style="background:#8250df"></span>Ordem 2</button>
@@ -326,17 +331,16 @@ table.dt tr.team-row td:nth-child(1){font-weight:600}
     <div class="filters" id="f-top3"></div>
 
     <div id="resumo3"><div class="kpis" id="k3"></div>
-    <div class="topbox"><div class="tophead"><h4 id="top-title3">Top 10 Afetações (abertos)</h4><div style="display:flex;gap:8px;align-items:center;margin-left:auto"><div class="topseg" id="topseg3"><button type="button" class="tsbtn active" data-tm="afet" onclick="setTopMode('d3','afet')">Afetação</button><button type="button" class="tsbtn" data-tm="conh" onclick="setTopMode('d3','conh')">Cli x Tmp</button></div><button type="button" class="export-btn" onclick="exportTop10('d3')">⬇ Exportar Top 10</button></div></div><div id="top3"></div></div></div>
+    <div class="topbox"><div class="tophead"><h4 id="top-title3">Top 10 Afetações (fechados)</h4><div style="display:flex;gap:8px;align-items:center;margin-left:auto"><div class="topseg" id="topseg3"><button type="button" class="tsbtn active" data-tm="afet" onclick="setTopMode('d3','afet')">Afetação</button><button type="button" class="tsbtn" data-tm="conh" onclick="setTopMode('d3','conh')">Cli x Tmp</button></div><button type="button" class="export-btn" onclick="exportTop10('d3')">⬇ Exportar Top 10</button></div></div><div id="top3"></div></div></div>
 
     <section class="segblock" id="seg-e3">
       <div class="seghead"><span class="dot" style="background:#1f6feb"></span>Entrada<span class="block-hint">clique nas barras/KPIs/Top 10 para detalhar</span></div>
       <div class="filters" id="f-e3"></div>
       <div class="grid">
-        <div class="card"><h3>Entrada por Hora — Incidente × Reincidente</h3><canvas id="d3-e1-1"></canvas></div>
-        <div class="card"><h3>Entrada por Turno — Incidente × Reincidente</h3><canvas id="d3-e1-2"></canvas></div>
-        <div class="card"><h3>Análise de Reincidentes — Equipe × Operador</h3><canvas id="d3-e1-3"></canvas></div>
-        <div class="card"><h3>Primeira Causa de Reincidência (ranking)</h3><canvas id="d3-e1-4"></canvas></div>
-        <div class="card"><h3>Top Equipes com Reincidência</h3><canvas id="d3-e1-5"></canvas></div>
+        <div class="card"><h3>Entradas BT por Dia — Incidente × Reincidente</h3><canvas id="d3-e1-1"></canvas></div>
+        <div class="card"><h3>Entradas MT por Dia — Incidente × Reincidente</h3><canvas id="d3-e1-2"></canvas></div>
+        <div class="card"><h3>Entradas por Turno (A/B/C) por Dia</h3><canvas id="d3-e1-3"></canvas></div>
+        <div class="card"><h3>Entradas por Afetação (Sem / Individual / Coletivo) por Dia</h3><canvas id="d3-e1-4"></canvas></div>
       </div>
     </section>
 
@@ -344,10 +348,10 @@ table.dt tr.team-row td:nth-child(1){font-weight:600}
       <div class="seghead"><span class="dot" style="background:#f0820f"></span>Saída<span class="block-hint">clique nas barras/KPIs/Top 10 para detalhar</span></div>
       <div class="filters" id="f-s3"></div>
       <div class="grid">
-        <div class="card"><h3>Saída por Hora — Equipe × Operador (fechados)</h3><canvas id="d3-s1-1"></canvas></div>
-        <div class="card"><h3>Saída por Turno — Equipe × Operador</h3><canvas id="d3-s1-2"></canvas></div>
-        <div class="card"><h3>Saída por Hora — por categoria de Saída</h3><canvas id="d3-s1-3"></canvas></div>
-        <div class="card"><h3>Atribuição de Incidentes por Entrada (abertos)</h3><canvas id="d3-s1-4"></canvas></div>
+        <div class="card"><h3>Saída por Dia — Equipe × Operador (fechados)</h3><canvas id="d3-s3-1"></canvas></div>
+        <div class="card"><h3>Produtivo × Improdutivo × Produtivo s/ afetação (equipe, por dia)</h3><canvas id="d3-s3-2"></canvas></div>
+        <div class="card"><h3>Improdutivos por Turno (A/B/C) por Dia</h3><canvas id="d3-s3-3"></canvas></div>
+        <div class="card"><h3>Top 10 Causa — Fechados (período)</h3><canvas id="d3-s3-4"></canvas></div>
       </div>
     </section>
 
@@ -355,23 +359,30 @@ table.dt tr.team-row td:nth-child(1){font-weight:600}
       <div class="seghead"><span class="dot" style="background:#5f6b7a"></span>Entrada &amp; Saída<span class="block-hint">clique nas barras/KPIs/Top 10 para detalhar</span></div>
       <div class="filters" id="f-m3"></div>
       <div class="grid">
-        <div class="card"><h3>Entrada × Saída por Turno</h3><canvas id="d3-m1-1"></canvas></div>
-        <div class="card"><h3>Entrada × Saída por Hora</h3><canvas id="d3-m1-2"></canvas></div>
-        <div class="card"><h3>Entrada × Saída por Hora — Clientes (Clts Atual)</h3><canvas id="d3-m1-3"></canvas></div>
+        <div class="card"><h3>Entrada × Saída por Dia</h3><canvas id="d3-m1-1"></canvas></div>
+        <div class="card"><h3>Entrada × Saída por Dia (c/ Saída Equipe)</h3><canvas id="d3-m1-2"></canvas></div>
+        <div class="card"><h3>Entrada × Saída por Dia — Cli Af 3 min (saída = fechados)</h3><canvas id="d3-m1-3"></canvas></div>
+      </div>
+    </section>
+
+    <section class="segblock" id="seg-t3">
+      <div class="seghead"><span class="dot" style="background:#b08a00"></span>TMA<span class="block-hint">clique nas barras para detalhar</span></div>
+      <div class="filters" id="f-t3"></div>
+      <div class="grid g-tma">
+        <div class="card span-all"><h3>Tempos Médios (TMA / TMP / TMD / TME) — Considerar, por Dia (Geral)</h3><canvas id="d3-t3-1"></canvas></div>
+        <div class="card"><h3>Tempos Médios — Considerar, por Dia — Turno A</h3><canvas id="d3-t3-2"></canvas></div>
+        <div class="card"><h3>Tempos Médios — Considerar, por Dia — Turno B</h3><canvas id="d3-t3-3"></canvas></div>
+        <div class="card"><h3>Tempos Médios — Considerar, por Dia — Turno C</h3><canvas id="d3-t3-4"></canvas></div>
       </div>
     </section>
 
     <section class="segblock" id="seg-o3">
-      <div class="seghead"><span class="dot" style="background:#1a7f37"></span>Em Aberto<span class="block-hint">clique nas barras/KPIs/Top 10 para detalhar</span></div>
+      <div class="seghead"><span class="dot" style="background:#1a7f37"></span>Reincidentes<span class="block-hint">clique nas barras/KPIs/Top 10 para detalhar</span></div>
       <div class="filters" id="f-o3"></div>
-      <div class="grid g5">
-        <div class="card"><h3>Abertas Hoje — BT</h3><canvas id="d3-o1-1"></canvas></div>
-        <div class="card"><h3>Abertas Ontem — BT</h3><canvas id="d3-o1-2"></canvas></div>
-        <div class="card"><h3>Abertas Dias Anteriores — BT</h3><canvas id="d3-o1-3"></canvas></div>
-        <div class="card span2x2"><h3>Clientes em Aberto (Clts Atual)</h3><canvas id="d3-o1-7"></canvas></div>
-        <div class="card"><h3>Abertas Hoje — MT</h3><canvas id="d3-o1-4"></canvas></div>
-        <div class="card"><h3>Abertas Ontem — MT</h3><canvas id="d3-o1-5"></canvas></div>
-        <div class="card"><h3>Abertas Dias Anteriores — MT</h3><canvas id="d3-o1-6"></canvas></div>
+      <div class="grid">
+        <div class="card"><h3>Reincidentes (1º) por Dia — Equipe × Remoto</h3><canvas id="d3-r3-1"></canvas></div>
+        <div class="card"><h3>Top 10 Primeiras Causas (1º) — Reincidência</h3><canvas id="d3-r3-2"></canvas></div>
+        <div class="card"><h3>Top 10 Equipes com Reincidência (1º)</h3><canvas id="d3-r3-3"></canvas></div>
       </div>
     </section>
 
@@ -379,27 +390,26 @@ table.dt tr.team-row td:nth-child(1){font-weight:600}
       <div class="seghead"><span class="dot" style="background:#d1242f"></span>+24h<span class="block-hint">clique nas barras/KPIs/Top 10 para detalhar</span></div>
       <div class="filters" id="f-x31"></div>
       <div class="grid">
-        <div class="card"><h3>+24h — Abertos × Fechados Hoje</h3><div class="stack"><div class="card vcard"><div class="v" id="d3-x24-sim">0</div><div class="l">Abertos</div></div><div class="card vcard"><div class="v" id="d3-x24-nao">0</div><div class="l">Fechados Hoje</div></div></div></div>
-        <div class="card"><h3>+24h Ontem — Aberto × Fechado Hoje</h3><canvas id="d3-x1b"></canvas></div>
-        <div class="card"><h3>+24h Dias Anteriores — Aberto × Fechado Hoje</h3><canvas id="d3-x1c"></canvas></div>
+        <div class="card"><h3>+24h (duração) — Fechados por tempo de atendimento</h3><div class="stack"><div class="card vcard"><div class="v" id="d3-x24-sim">0</div><div class="l">Fechados >24h</div></div><div class="card vcard"><div class="v" id="d3-x24-nao">0</div><div class="l">Fechados ≤24h</div></div></div></div>
+        <div class="card"><h3>+24h por Dia — Fechados com duração >24h</h3><canvas id="d3-x1b"></canvas></div>
       </div>
     </section>
 
-    <section class="segblock" id="seg-xO3">
-      <div class="seghead"><span class="dot" style="background:#0969da"></span>OSM<span class="block-hint">clique nas barras/KPIs/Top 10 para detalhar</span></div>
-      <div class="filters" id="f-xO3"></div>
-      <div class="grid">
-        <div class="card"><h3>Entrada × Saída por Hora — OSM (Sim)</h3><canvas id="d3-xO-1"></canvas></div>
-        <div class="card"><h3>OSM — Sim × Não</h3><div class="stack"><div class="card vcard"><div class="v" id="d3-xO-sim">0</div><div class="l">Sim</div></div><div class="card vcard"><div class="v" id="d3-xO-nao">0</div><div class="l">Não</div></div></div></div>
-      </div>
-    </section>
+  <section class="segblock" id="seg-xO3">
+    <div class="seghead"><span class="dot" style="background:#0969da"></span>OSM<span class="block-hint">clique nas barras/KPIs/Top 10 para detalhar</span></div>
+    <div class="filters" id="f-xO3"></div>
+    <div class="grid">
+      <div class="card"><h3>OSM — Entradas × Saídas</h3><div class="stack"><div class="card vcard"><div class="v" id="d3-xO-ent">0</div><div class="l">Entradas (OSM)</div></div><div class="card vcard"><div class="v" id="d3-xO-sai">0</div><div class="l">Saídas (OSM)</div></div></div></div>
+      <div class="card"><h3>Entrada × Saída por Dia — OSM (Sim)</h3><canvas id="d3-xO-1"></canvas></div>
+    </div>
+  </section>
 
     <section class="segblock" id="seg-x32">
       <div class="seghead"><span class="dot" style="background:#8250df"></span>Ordem 2<span class="block-hint">clique nas barras/KPIs/Top 10 para detalhar</span></div>
       <div class="filters" id="f-x32"></div>
       <div class="grid">
         <div class="card"><h3>Ordem 2 — Fechados Hoje (sim × não)</h3><div class="stack"><div class="card vcard"><div class="v" id="d3-x2-sim">0</div><div class="l">Sim</div></div><div class="card vcard"><div class="v" id="d3-x2-nao">0</div><div class="l">Não</div></div></div></div>
-        <div class="card"><h3>Ordem 2 — Fechados Hoje (sim × não)</h3><canvas id="d3-x1-2"></canvas></div>
+        <div class="card"><h3>Ordem 2 por Dia — Fechados (sim × não)</h3><canvas id="d3-x1-2"></canvas></div>
       </div>
     </section>
 
@@ -408,7 +418,7 @@ table.dt tr.team-row td:nth-child(1){font-weight:600}
       <div class="filters" id="f-x33"></div>
       <div class="grid">
         <div class="card"><h3>5 Regras de Ouro — Fechados Hoje MT (S × N)</h3><div class="stack"><div class="card vcard"><div class="v" id="d3-x3-sim">0</div><div class="l">S</div></div><div class="card vcard"><div class="v" id="d3-x3-nao">0</div><div class="l">N</div></div></div></div>
-        <div class="card"><h3>5 Regras de Ouro — Fechados Hoje MT (S × N)</h3><canvas id="d3-x1-3"></canvas></div>
+        <div class="card"><h3>5 Regras de Ouro por Dia — Fechados MT (S × N)</h3><canvas id="d3-x1-3"></canvas></div>
       </div>
     </section>
 
@@ -442,6 +452,13 @@ table.dt tr.team-row td:nth-child(1){font-weight:600}
       <tr><td>Em Aberto (o1/o2)</td><td>o1: nenhum · o2: Entrada</td><td>—</td></tr>
       <tr><td>+24h (x1), Ordem 2 (x2), 5 Regras (x3)</td><td>nenhum</td><td>—</td></tr>
       <tr><td>TMA (t2), Processos (p2)</td><td>Entrada, Saída, Turno Entrada, Turno Fechamento</td><td>—</td></tr>
+      <tr><td colspan="3" style="background:#1c2733;color:#9fb3c8;font-weight:600">Dashboard 3 (visão de período / mês-dia)</td></tr>
+      <tr><td>Entrada (e3)</td><td>nenhum</td><td>—</td></tr>
+      <tr><td>Saída (s3)</td><td>Turno Entrada, Turno Saída</td><td>—</td></tr>
+      <tr><td>Entrada &amp; Saída (m3)</td><td>nenhum (gráficos já são por dia)</td><td>—</td></tr>
+      <tr><td>Reincidentes (o3)</td><td>Turno Entrada, Turno Saída</td><td>—</td></tr>
+      <tr><td>TMA (t3)</td><td>— (recorte interno por <code>Considerar TMA = Considerar</code>)</td><td>—</td></tr>
+      <tr><td>+24h (x31), OSM (xO3), Ordem 2 (x32), 5 Regras (x33)</td><td>nenhum</td><td>—</td></tr>
     </table>
 
     <h3>2. Conceitos de base</h3>
@@ -462,6 +479,7 @@ table.dt tr.team-row td:nth-child(1){font-weight:600}
       <li><b>Causas ignoradas</b> (<code>isIgnCausa</code>): não entram nos gráficos de "Em Aberto" nem em alguns de atribuição. São: <code>ATENDIMENTO REMOTO</code>, <code>PROGRAMADA MANUTENÇÃO</code>, e qualquer causa que contenha <code>INSTANT</code> ou <code>CANCELADO</code>.</li>
       <li><b>TMA</b> — Tempo Médio de Atendimento (em minutos, campo <code>tma</code>). <b>TME</b> — Tempo Médio de Execução (<code>tme</code>); a análise de TME considera apenas registros com <code>tmea = sim</code>.</li>
       <li><b>Cluster de duração</b> (<code>c</code>): faixas de 2 em 2 horas (<code>0h-2h</code> … <code>22h-24h</code>) mais a faixa <code>24h+</code>.</li>
+      <li><b>Duração em minutos</b> (<code>dur</code>): tempo total em minutos (abertura → fechamento). No Dashboard 3, o segmento <b>+24h</b> usa diretamente essa coluna para contar fechados com <code>dur &gt; 1440</code> (mais de 24h), em vez do cluster.</li>
       <li><b>Ordem 2</b> (<code>o</code>): <code>sim</code> / <code>não</code>.</li>
       <li><b>5 Regras de Ouro</b> (<code>ro</code>): <code>S</code> / <code>N</code> (aplicado a incidentes <b>MT</b>).</li>
       <li><b>OSM</b> (<code>osm</code>): <code>SIM</code> / <code>NÃO</code>.</li>
@@ -558,6 +576,55 @@ table.dt tr.team-row td:nth-child(1){font-weight:600}
       <li>Improdutivo por Processo — Fechados e Fechados por Processo: por grupo (<code>gpd</code>, equipe deslocada <code>eqd ≠ ---</code>).</li>
     </ul>
 
+    <h4>5.3 Dashboard 3 (Mês/Dia — visão de período)</h4>
+    <p>Todos os gráficos do Dashboard 3 são <b>por dia</b> (eixo X = dia, ordenado por mês/dia) e trazem <b>linha de média</b> (vermelha para o total, ou na cor de cada série). Clique em qualquer barra/KPI para detalhar. Os filtros universais (UT, Polo, NT, Grupo, Turnos, Mês, Dia) aplicam-se normalmente; os filtros por segmento só existem onde indicado abaixo.</p>
+    <p><span class="badge">Entrada (e3)</span></p>
+    <ul>
+      <li>Entrada BT / MT por Dia — Incidente × Reincidente (barras empilhadas) + média do total.</li>
+      <li>Entrada por Turno (A/B/C) por Dia — barras lado a lado + média por turno.</li>
+      <li>Entrada por Afetação (Cli Af 3 min) por Dia — Sem afetação / Individual / Coletivo + médias por categoria.</li>
+    </ul>
+    <p><span class="badge">Saída (s3)</span></p>
+    <ul>
+      <li>Saída Equipe × Operador por Dia (fechados) + média do total.</li>
+      <li>Produtivo × Improdutivo × Produtivo s/ afetação (equipe) por Dia + médias por categoria.</li>
+      <li>Improdutivos por Turno (A/B/C) por Dia + médias por turno.</li>
+      <li>Top 10 Causa (fechados, equipe) — barras horizontais.</li>
+    </ul>
+    <p><span class="badge">Entrada &amp; Saída (m3)</span></p>
+    <ul>
+      <li>Entrada × Saída por Dia (barras) + médias.</li>
+      <li>Entrada × Saída por Dia (linha, c/ Saída Equipe) + médias.</li>
+      <li>Entrada × Saída por Dia — Cli Af 3 min (saída = fechados) + médias. Substitui o "Clientes Atual" do Dashboard 1 pela métrica de afetação de 3 minutos (<code>a3</code>).</li>
+    </ul>
+    <p><span class="badge">TMA (t3)</span></p>
+    <ul>
+      <li><b>Geral (por Dia)</b>: barras empilhadas de TMP + TMD + TME (média por dia) + 4 retas tracejadas de média (TMA vermelho, TMP azul, TMD laranja, TME verde) sobre o período. Apenas incidentes com <code>Considerar TMA = Considerar</code>.</li>
+      <li><b>Por Turno (A/B/C)</b>: um gráfico empilhado (TMP + TMD + TME, média por dia) para cada turno, cada um com <b>suas próprias</b> 4 retas tracejadas de média — permite comparar as médias entre turnos.</li>
+      <li><b>Layout</b>: o gráfico Geral ocupa a linha superior (largura total) e os 3 gráficos por turno ficam lado a lado na linha inferior (grade 2×3).</li>
+      <li>A reta vermelha (TMA) aparece na <b>legenda como "TMA"</b>; o rótulo de <b>total</b> sobre as barras é vermelho com fonte branca (representa o TMA).</li>
+      <li><b>Filtro</b>: nenhum filtro por segmento — o recorte é interno por <code>Considerar TMA = Considerar</code>.</li>
+    </ul>
+    <p><span class="badge">Reincidentes (o3)</span> — substitui o antigo segmento "Em Aberto".</p>
+    <ul>
+      <li>Reincidentes (1º) Equipe × Remoto por Dia (rt contém "1°", primeiras causas) + média do total.</li>
+      <li>Top 10 Primeiras Causas (reincidência "1°") por causa — barras horizontais.</li>
+      <li>Top 10 Equipes (eqd) com Reincidência (1°) — barras horizontais.</li>
+    </ul>
+    <p><span class="badge">+24h (x31)</span></p>
+    <ul>
+      <li>KPIs (Fechados &gt;24h / Fechados ≤24h) e gráfico por Dia: fechados com <code>dur &gt; 1440</code> min, calculado pela coluna Duração em minutos (não mais pelo cluster).</li>
+    </ul>
+    <p><span class="badge">OSM (xO3)</span></p>
+    <ul>
+      <li>KPIs (Entradas/Saídas OSM) e linha Entrada × Saída OSM por Dia + médias.</li>
+    </ul>
+    <p><span class="badge">Ordem 2 (x32) · 5 Regras (x33)</span></p>
+    <ul>
+      <li>Ordem 2: fechados (sim/não) por Dia + média do total.</li>
+      <li>5 Regras: MT fechados (S/N) por Dia + média do total.</li>
+    </ul>
+
     <h3>6. Interações</h3>
     <ul>
       <li><b>Clique em barra de gráfico / KPI / Top 10 / linha de equipe</b> → abre o <i>drill-down</i> (tabela de incidentes) já filtrado.</li>
@@ -647,6 +714,17 @@ const UTN=['CAMPOS','LAGOS','MACAÉ','NOROESTE'];
 const REIN=['BT – Reincidência','BT – Reincidência Coletiva','MT TRONCO – Reincidência','MT RAMAL – Reincidência'];
 const isReinc=r=>REIN.includes(r.rt);
 const isIncid=r=>!REIN.includes(r.rt);
+const isPrim=r=>/1[°º]/.test(String(r.rt||''));   // primeira causa (Reincidente tipo contém "1°")
+const dayKeyOf=r=>String(r.d)+'/'+String(r.mes);
+function mkDays(base){
+  const dk=r=>((r.mes!==undefined&&r.mes!==null)?String(r.mes):'?')+'-'+((r.d!==undefined&&r.d!==null)?String(r.d):'?');
+  const dm={};
+  base.forEach(r=>{const k=dk(r); if(!dm[k]) dm[k]={mes:r.mes,d:r.d};});
+  const keys=Object.keys(dm).sort((a,b)=>{const A=dm[a],B=dm[b];return (Number(A.mes)-Number(B.mes))||(Number(A.d)-Number(B.d));});
+  const labels=keys.map(k=>String(dm[k].d)+'/'+String(dm[k].mes));
+  if(!labels.length) labels.push('—');
+  return {dk,keys,labels,mean:a=>{const t=a.reduce((x,y)=>x+y,0);return a.length?t/a.length:0;}};
+}
 const isIgnCausa=r=>{const c=String(r.ca||'').toUpperCase();return c==='ATENDIMENTO REMOTO'||c==='PROGRAMADA MANUTENÇÃO'||c.includes('INSTANT')||c.includes('CANCELADO');};
 
 const BLUE=['#1f6feb','#86b7f2','#4d8ceb','#b0cff7','#2f6fce','#a9cdf5','#5b8ad4','#c9dcf7'];
@@ -708,7 +786,7 @@ function passes(r,F){
 const TOP_CONF={
   d1:[['ut','UT','ut',['UTS','UTN']],['p','Polo','p',polos()],['suc','Sucursal','suc',()=>sucPool()],['nt','NT','nt',nts()],['gpd','Grupo Processos (Eq. Desl.)','gpd',()=>distinct('gpd')],['ta','Turno Entrada','ta',TURN],['ts','Turno Saída','ts',TURN]],
   d2:[['ut','UT','ut',['UTS','UTN']],['p','Polo','p',polos()],['suc','Sucursal','suc',()=>sucPool()],['nt','NT','nt',nts()],['gpd','Grupo Processos (Eq. Desl.)','gpd',()=>distinct('gpd')],['ta','Turno Entrada','ta',TURN],['ts','Turno Saída','ts',TURN]],
-  d3:[['mes','Mês','mes',distinct('mes').map(String)],['diaMes','Dia','diaMes',distinct('diaMes').map(String)]],
+  d3:[['ut','UT','ut',['UTS','UTN']],['p','Polo','p',polos()],['suc','Sucursal','suc',()=>sucPool()],['nt','NT','nt',nts()],['gpd','Grupo Processos (Eq. Desl.)','gpd',()=>distinct('gpd')],['ta','Turno Entrada','ta',TURN],['ts','Turno Saída','ts',TURN],['mes','Mês','mes',distinct('mes').map(String)],['diaMes','Dia','diaMes',distinct('diaMes').map(String)]],
 };
 
 // ---- filtros multi-seleção ----
@@ -726,6 +804,7 @@ function mselWidget(container, label, cur, pool, onChange){
   const allL=document.createElement('label'); allL.className='msel-opt all';
   const allCb=document.createElement('input'); allCb.type='checkbox';
   allL.appendChild(allCb); allL.appendChild(document.createTextNode(' Todos'));
+  pop.appendChild(allL);
   const boxes=[];
   pool.forEach(v=>{
     const l=document.createElement('label'); l.className='msel-opt';
@@ -819,12 +898,13 @@ const SUB_CONF={
   o2:{keys:[['e','Entrada','e',ents()]],defs:{}},
   t2:{keys:[['e','Entrada','e',ents()],['sd','Saída','sd',sds()],['ta','Turno Entrada','ta',TURN],['ts','Turno Fechamento','ts',TURN]],defs:{}},
   p2:{keys:[['e','Entrada','e',ents()],['sd','Saída','sd',sds()],['ta','Turno Entrada','ta',TURN],['ts','Turno Fechamento','ts',TURN]],defs:{}},
-  e3:{keys:[['e','Entrada','e',ents()],['sd','Saída','sd',sds()],['ta','Turno Entrada','ta',TURN],['ts','Turno Saída','ts',TURN]],defs:{e:['Hoje']}},
-  s3:{keys:[['e','Entrada','e',ents()],['sd','Saída','sd',sds()],['ta','Turno Entrada','ta',TURN],['ts','Turno Saída','ts',TURN]],defs:{sd:['Hoje']}},
-  m3:{keys:[['dia','Dia','dia',['Hoje','Ontem']]],defs:{dia:['Hoje']}},
-  o3:{keys:[],defs:{}},
+  e3:{keys:[],defs:{}},
+  s3:{keys:[['ta','Turno Entrada','ta',TURN],['ts','Turno Saída','ts',TURN]],defs:{}},
+  m3:{keys:[],defs:{}},
+  t3:{keys:[],defs:{}},
+  o3:{keys:[['ta','Turno Entrada','ta',TURN],['ts','Turno Saída','ts',TURN]],defs:{}},
   x31:{keys:[],defs:{}},
-  xO3:{keys:[['dia','Dia','dia',['Hoje','Ontem']]],defs:{dia:['Hoje']}},
+  xO3:{keys:[],defs:{}},
   x32:{keys:[],defs:{}},
   x33:{keys:[],defs:{}},
 };
@@ -916,6 +996,7 @@ function stacked(id,cfg){
 const totalsPlugin={id:'totals',afterDatasetsDraw(chart,args,opts){
   if(!opts||!opts.enabled) return;
   const isH=chart.options.indexAxis==='y';
+  const isStacked=isH?!!(chart.options.scales&&chart.options.scales.x&&chart.options.scales.x.stacked):!!(chart.options.scales&&chart.options.scales.y&&chart.options.scales.y.stacked);
   const cat=isH?chart.scales.y:chart.scales.x;
   const val=isH?chart.scales.x:chart.scales.y;
   if(!cat||!val) return;
@@ -930,28 +1011,50 @@ const totalsPlugin={id:'totals',afterDatasetsDraw(chart,args,opts){
   ctx.textAlign='center';
   ctx.textBaseline='middle';
   for(let i=0;i<n;i++){
-    let tot=0;
-    for(const d of ds){tot+=Number(d.data[i])||0;}
+    let tot=0,maxV=0;
+    for(const d of ds){const v=Number(d.data[i])||0;tot+=v;if(v>maxV)maxV=v;}
     if(tot<=0) continue;
     const txt=tot>=1000?String(Math.round(tot/100)/10)+'k':String(tot);
     ctx.font='700 11px "Segoe UI",Arial';
     const tw=ctx.measureText(txt).width;
     const px=isH?val.getPixelForValue(tot):cat.getPixelForValue(labels[i]);
-    const py=isH?cat.getPixelForValue(labels[i]):val.getPixelForValue(tot);
+    const anchorV=isStacked?tot:maxV;
+    const py=isH?cat.getPixelForValue(labels[i]):val.getPixelForValue(anchorV);
     const cy=isH?py:py-15;
     const x1=px-tw/2-3,y1=cy-8,x2=px+tw/2+3,y2=cy+8;
     chart.__totRects.push({x1:x1,y1:y1,x2:x2,y2:y2,i:i});
-    ctx.fillStyle='#ffffff';
-    ctx.fillRect(x1,y1,tw+6,16);
-    ctx.strokeStyle='#d8e0ea';
-    ctx.lineWidth=1;
-    ctx.strokeRect(x1,y1,tw+6,16);
-    ctx.fillStyle='#1f2d3d';
-    ctx.fillText(txt,px,cy);
+     const tl=opts&&opts.redLabel;
+     ctx.fillStyle= tl?'#d1242f':'#ffffff';
+     ctx.fillRect(x1,y1,tw+6,16);
+     ctx.strokeStyle= tl?'#d1242f':'#d8e0ea';
+     ctx.lineWidth=1;
+     ctx.strokeRect(x1,y1,tw+6,16);
+     ctx.fillStyle= tl?'#ffffff':'#1f2d3d';
+     ctx.fillText(txt,px,cy);
   }
   ctx.restore();
 }};
 Chart.register(totalsPlugin);
+const meanLinesPlugin={id:'meanLines',afterDatasetsDraw(chart){
+  const cfg=chart.options.plugins&&chart.options.plugins.meanLines;
+  if(!cfg||!cfg.lines||!cfg.lines.length) return;
+  const {ctx,chartArea:{left,right},scales:{y}}=chart;
+  ctx.save();ctx.font='700 10px "Segoe UI",Arial';ctx.textBaseline='middle';ctx.textAlign='left';
+  cfg.lines.forEach(ml=>{
+    const v=ml.value;
+    if(v==null||!isFinite(v)) return;
+    const yp=y.getPixelForValue(v);
+    if(yp<chart.chartArea.top-1||yp>chart.chartArea.bottom+1) return;
+    ctx.beginPath();ctx.setLineDash([6,4]);ctx.lineWidth=1.5;ctx.strokeStyle=ml.color||'#d1242f';
+    ctx.moveTo(left,yp);ctx.lineTo(right,yp);ctx.stroke();
+    const txt='Média: '+Number(v).toLocaleString('pt-BR',{maximumFractionDigits:1});
+    const tw=ctx.measureText(txt).width;
+    ctx.setLineDash([]);ctx.fillStyle='rgba(255,255,255,.9)';ctx.fillRect(right-tw-7,yp-8,tw+6,16);
+    ctx.fillStyle='#1f2d3d';ctx.fillText(txt,right-tw-4,yp);
+  });
+  ctx.restore();
+}};
+Chart.register(meanLinesPlugin);
 
 // ---- renderChart genérico + drill ----
 let drillSets={};
@@ -1018,7 +1121,9 @@ function renderChart(id, labels, series, o){
   });
   storeDrill(id, labels, i=>series.map(s=>s.rows(labels[i])));
   const isLine=o.type==='line';
-  const cfg={type:o.type||'bar',data:{labels:labels,datasets:datasets},options:{plugins:{datalabels:isLine?dlabels(false):dins(),totals:{enabled:!!o.stacked}}}};
+  const plug={datalabels:isLine?dlabels(false):dins(),totals:{enabled:!!o.stacked}};
+  if(o.meanLines) plug.meanLines={lines:o.meanLines};
+  const cfg={type:o.type||'bar',data:{labels:labels,datasets:datasets},options:{plugins:plug}};
   if(o.indexAxis==='y') cfg.options.indexAxis='y';
   if(o.stacked){
     stacked(id,cfg);
@@ -1063,13 +1168,86 @@ function buildE1(base){
     {name:'Equipe',color:BLUE[0],rows:v=>reinc.filter(r=>r.rt===v&&r.eo==='equipe')},
     {name:'Operador',color:BLUE[1],rows:v=>reinc.filter(r=>r.rt===v&&r.eo==='operador')},
   ],{stacked:true});
-  const ca=tally(reinc.filter(r=>r.ca!=='---'),['ca']);
+  const primR=reinc.filter(isPrim);   // primeiras causas (1°)
+  const ca=tally(primR.filter(r=>r.ca&&r.ca!=='---'),['ca']);
   const caK=Object.keys(ca).sort((a,b)=>ca[b]-ca[a]).slice(0,15);
-  renderChart('e1-4',caK,[{name:'Qtd',color:BLUE[0],rows:k=>reinc.filter(r=>r.ca===k)}],{indexAxis:'y'});
-  const eqm=tally(reinc.filter(r=>!['---','','SEM EQUIPE','GENERICA'].includes(r.eqd)),['eqd']);
+  renderChart('e1-4',caK,[{name:'Qtd',color:BLUE[0],rows:k=>primR.filter(r=>r.ca===k)}],{indexAxis:'y'});
+  const eqm=tally(primR.filter(r=>r.eqd&&!['---','','SEM EQUIPE','GENERICA'].includes(r.eqd)),['eqd']);
   const eqK=Object.keys(eqm).sort((a,b)=>eqm[b]-eqm[a]).slice(0,10);
-  const re4=REIN.filter(v=>reinc.some(r=>r.rt===v));
-  renderChart('e1-5',eqK,re4.map((v,i)=>({name:v,color:BLUE[i%BLUE.length],rows:eq=>reinc.filter(r=>r.eqd===eq&&r.rt===v)})),{});
+  renderChart('e1-5',eqK,[{name:'Qtd',color:BLUE[0],rows:k=>primR.filter(r=>r.eqd===k)}],{indexAxis:'y'});
+}
+
+// ---- Dashboard 3 - Entrada (visão de período) ----
+function barWithMeans(id, labels, datasets, opts, drillFn){
+  opts=opts||{};
+  const cid=tab==='d3'?('d3-'+id):id;
+  const el=document.getElementById(cid);
+  if(!el) return;
+  const meanLines=opts.meanLines||[];
+  const cfg={
+    type:'bar',
+    data:{labels:labels,datasets:datasets},
+    options:{
+      responsive:true,maintainAspectRatio:false,
+      scales:{x:{stacked:!!opts.stacked,grid:{color:'#e5ebf3'},ticks:{color:'#5b6b7b',font:{size:10}}},
+              y:{stacked:!!opts.stacked,beginAtZero:true,grid:{color:'#e5ebf3'},ticks:{color:'#5b6b7b'}}},
+      plugins:{legend:{position:'bottom',labels:{boxWidth:12,font:{size:11},color:'#5b6b7b'}},
+               tooltip:{enabled:true},
+               datalabels:dins(),
+                totals:{enabled:true,redLabel:!!opts.redLabel},
+               meanLines:{lines:meanLines}}
+    },
+    plugins:[]
+  };
+  storeDrill(cid, labels, drillFn||(()=>[]));
+  mk(cid, cfg);
+}
+function buildE3(base){
+  const rows=base;
+  const dk=r=>((r.mes!==undefined&&r.mes!==null)?String(r.mes):'?')+'-'+((r.d!==undefined&&r.d!==null)?String(r.d):'?');
+  const dm={};
+  rows.forEach(r=>{const k=dk(r); if(!dm[k]) dm[k]={mes:r.mes,d:r.d};});
+  const keys=Object.keys(dm).sort((a,b)=>{const A=dm[a],B=dm[b];return (Number(A.mes)-Number(B.mes))||(Number(A.d)-Number(B.d));});
+  const labels=keys.map(k=>String(dm[k].d)+'/'+String(dm[k].mes));
+  if(!labels.length) labels.push('—');
+  const bt=rows.filter(r=>r.t==='BT');
+  const mt=rows.filter(r=>r.t==='MT');
+  const mean=a=>{const t=a.reduce((x,y)=>x+y,0);return a.length?t/a.length:0;};
+  const btInc=keys.map(k=>bt.filter(r=>dk(r)===k&&isIncid(r)).length), btRe=keys.map(k=>bt.filter(r=>dk(r)===k&&isReinc(r)).length);
+  const mtInc=keys.map(k=>mt.filter(r=>dk(r)===k&&isIncid(r)).length), mtRe=keys.map(k=>mt.filter(r=>dk(r)===k&&isReinc(r)).length);
+  const btTot=btInc.map((v,i)=>v+btRe[i]);
+  const mtTot=mtInc.map((v,i)=>v+mtRe[i]);
+  barWithMeans('e1-1',labels,[
+    {label:'Incidente',backgroundColor:BLUE[0],data:btInc},
+    {label:'Reincidente',backgroundColor:BLUE[1],data:btRe},
+  ],{stacked:true,meanLines:[{value:mean(btTot),color:'#d1242f'}]},
+    i=>[bt.filter(r=>dk(r)===keys[i]&&isIncid(r)),bt.filter(r=>dk(r)===keys[i]&&isReinc(r))]);
+  barWithMeans('e1-2',labels,[
+    {label:'Incidente',backgroundColor:BLUE[0],data:mtInc},
+    {label:'Reincidente',backgroundColor:BLUE[1],data:mtRe},
+  ],{stacked:true,meanLines:[{value:mean(mtTot),color:'#d1242f'}]},
+    i=>[mt.filter(r=>dk(r)===keys[i]&&isIncid(r)),mt.filter(r=>dk(r)===keys[i]&&isReinc(r))]);
+  const turns=['A','B','C'];
+  const tcol=[BLUE[0],BLUE[1],BLUE[3]];
+  const turnData=turns.map((t,i)=>{const data=keys.map(k=>rows.filter(r=>dk(r)===k&&r.ta===t).length);return {label:'Turno '+t,backgroundColor:tcol[i],data:data,mean:mean(data)};});
+  const turnMean=turnData.map(d=>d.mean);
+  barWithMeans('e1-3',labels,turnData,{stacked:false,meanLines:tcol.map((c,i)=>({value:turnMean[i],color:c}))},
+    i=>turns.map((t,ti)=>rows.filter(r=>dk(r)===keys[i]&&r.ta===t)));
+  const cat=r=>{const v=Number(r.a3)||0;return v<=0?'sem':(v===1?'ind':'col');};
+  const afSem=keys.map(k=>rows.filter(r=>dk(r)===k&&cat(r)==='sem').length);
+  const afInd=keys.map(k=>rows.filter(r=>dk(r)===k&&cat(r)==='ind').length);
+  const afCol=keys.map(k=>rows.filter(r=>dk(r)===k&&cat(r)==='col').length);
+  const afCol2=[BLUE[1],BLUE[0],'#0a3069'];
+  barWithMeans('e1-4',labels,[
+    {label:'Sem afetação',backgroundColor:'#8b949e',data:afSem},
+    {label:'Individual',backgroundColor:afCol2[1],data:afInd},
+    {label:'Coletivo',backgroundColor:afCol2[2],data:afCol},
+  ],{stacked:true,meanLines:[
+    {value:mean(afSem),color:'#8b949e'},
+    {value:mean(afInd),color:afCol2[1]},
+    {value:mean(afCol),color:afCol2[2]},
+  ]},
+    i=>[rows.filter(r=>dk(r)===keys[i]&&cat(r)==='sem'),rows.filter(r=>dk(r)===keys[i]&&cat(r)==='ind'),rows.filter(r=>dk(r)===keys[i]&&cat(r)==='col')]);
 }
 
 function buildS1(base){
@@ -1094,7 +1272,61 @@ function buildS1(base){
   ],{stacked:true});
 }
 
+// ---- Dashboard 3 - Saída (visão de período) ----
+function buildS3(base){
+  const fe=base.filter(r=>r.s==='Fechado');
+  const dk=r=>((r.mes!==undefined&&r.mes!==null)?String(r.mes):'?')+'-'+((r.d!==undefined&&r.d!==null)?String(r.d):'?');
+  const dm={};
+  fe.forEach(r=>{const k=dk(r); if(!dm[k]) dm[k]={mes:r.mes,d:r.d};});
+  const keys=Object.keys(dm).sort((a,b)=>{const A=dm[a],B=dm[b];return (Number(A.mes)-Number(B.mes))||(Number(A.d)-Number(B.d));});
+  const labels=keys.map(k=>String(dm[k].d)+'/'+String(dm[k].mes));
+  if(!labels.length) labels.push('—');
+  const mean=a=>{const t=a.reduce((x,y)=>x+y,0);return a.length?t/a.length:0;};
+
+  // 1) Equipe x Operador por dia (empilhado) + media do total
+  const eqD=keys.map(k=>fe.filter(r=>dk(r)===k&&r.eo==='equipe').length);
+  const opD=keys.map(k=>fe.filter(r=>dk(r)===k&&r.eo==='operador').length);
+  const totD=eqD.map((v,i)=>v+opD[i]);
+  barWithMeans('s3-1',labels,[
+    {label:'Equipe',backgroundColor:ORANGE[0],data:eqD},
+    {label:'Operador',backgroundColor:ORANGE[1],data:opD},
+  ],{stacked:true,meanLines:[{value:mean(totD),color:'#d1242f'}]},
+    i=>[fe.filter(r=>dk(r)===keys[i]&&r.eo==='equipe'),fe.filter(r=>dk(r)===keys[i]&&r.eo==='operador')]);
+
+  // 2) Produtivo x Improdutivo x Produtivo s/ afetacao (equipe only) + medias por categoria
+  const eqOnly=fe.filter(r=>r.eo==='equipe');
+  const imp=keys.map(k=>eqOnly.filter(r=>dk(r)===k&&r.pd==='Improdutivo').length);
+  const pro=keys.map(k=>eqOnly.filter(r=>dk(r)===k&&r.pd==='Produtivo').length);
+  const proS=keys.map(k=>eqOnly.filter(r=>dk(r)===k&&r.pd==='Produtivo sem afetação').length);
+  const cImp=ORANGE[3], cPro=ORANGE[0], cProS=ORANGE[1];
+  barWithMeans('s3-2',labels,[
+    {label:'Improdutivo',backgroundColor:cImp,data:imp},
+    {label:'Produtivo',backgroundColor:cPro,data:pro},
+    {label:'Produtivo s/ afetação',backgroundColor:cProS,data:proS},
+  ],{stacked:true,meanLines:[
+    {value:mean(imp),color:cImp},
+    {value:mean(pro),color:cPro},
+    {value:mean(proS),color:cProS},
+  ]},
+    i=>[eqOnly.filter(r=>dk(r)===keys[i]&&r.pd==='Improdutivo'),eqOnly.filter(r=>dk(r)===keys[i]&&r.pd==='Produtivo'),eqOnly.filter(r=>dk(r)===keys[i]&&r.pd==='Produtivo sem afetação')]);
+
+  // 3) Improdutivos por turno (A/B/C) por dia (lado a lado) + medias por turno
+  const turns=['A','B','C'];
+  const tcol=[ORANGE[3],ORANGE[0],ORANGE[1]];
+  const turnData=turns.map((t,i)=>{const data=keys.map(k=>fe.filter(r=>dk(r)===k&&r.ts===t&&r.pd==='Improdutivo').length);return {label:'Turno '+t,backgroundColor:tcol[i],data:data,mean:mean(data)};});
+  const turnMean=turnData.map(d=>d.mean);
+  barWithMeans('s3-3',labels,turnData,{stacked:false,meanLines:tcol.map((c,i)=>({value:turnMean[i],color:c}))},
+    i=>turns.map(t=>fe.filter(r=>dk(r)===keys[i]&&r.ts===t&&r.pd==='Improdutivo')));
+
+  // 4) Top 10 causa (fechados, apenas equipe) - barras horizontais
+  const caFe=fe.filter(r=>r.eo==='equipe');
+  const ca=tally(caFe.filter(r=>r.ca&&r.ca!=='---'),['ca']);
+  const caK=Object.keys(ca).sort((a,b)=>ca[b]-ca[a]).slice(0,10);
+  renderChart('s3-4',caK,[{name:'Qtd',color:ORANGE[0],rows:k=>caFe.filter(r=>r.ca===k)}],{indexAxis:'y'});
+}
+
 function buildM1(base){
+  if(CUR_SUB==='m3') return buildM1_d3(base);
   const F=FSTATE[CUR_SUB]||{};
   const dias=(F.dia&&!F.dia.all&&F.dia.sel.size)?[...F.dia.sel]:['Hoje'];
   const ent=base.filter(r=>dias.includes(r.e));
@@ -1114,6 +1346,71 @@ function buildM1(base){
     {name:'Saída (clientes)',color:'#d1242f',area:'rgba(209,36,47,.12)',wt:'ct',rows:i=>sai.filter(r=>parseInt(r.hs,10)===parseInt(i,10))},
     {name:'Saída Equipe (clientes)',color:'#1a7f37',area:'rgba(26,127,55,.12)',wt:'ct',rows:i=>saiEq.filter(r=>parseInt(r.hs,10)===parseInt(i,10))},
   ],{type:'line'});
+}
+
+// ---- Dashboard 3 - Entrada & Saída (visão de período) ----
+function buildM1_d3(base){
+  const ent=base;                                   // entradas (abertos) no período
+  const sai=base.filter(r=>r.s==='Fechado');        // saídas = fechados
+  const saiEq=sai.filter(r=>r.eo==='equipe');
+  const dk=r=>((r.mes!==undefined&&r.mes!==null)?String(r.mes):'?')+'-'+((r.d!==undefined&&r.d!==null)?String(r.d):'?');
+  const dm={};
+  base.forEach(r=>{const k=dk(r); if(!dm[k]) dm[k]={mes:r.mes,d:r.d};});
+  const keys=Object.keys(dm).sort((a,b)=>{const A=dm[a],B=dm[b];return (Number(A.mes)-Number(B.mes))||(Number(A.d)-Number(B.d));});
+  const labels=keys.map(k=>String(dm[k].d)+'/'+String(dm[k].mes));
+  if(!labels.length) labels.push('—');
+  const dayKeyOf=r=>String(r.d)+'/'+String(r.mes);
+  const mean=a=>{const t=a.reduce((x,y)=>x+y,0);return a.length?t/a.length:0;};
+  const entD=keys.map(k=>ent.filter(r=>dk(r)===k).length);
+  const saiD=keys.map(k=>sai.filter(r=>dk(r)===k).length);
+  const saiEqD=keys.map(k=>saiEq.filter(r=>dk(r)===k).length);
+  const entA3=keys.map(k=>sumKey(ent.filter(r=>dk(r)===k),'a3'));
+  const saiA3=keys.map(k=>sumKey(sai.filter(r=>dk(r)===k),'a3'));
+  const saiEqA3=keys.map(k=>sumKey(saiEq.filter(r=>dk(r)===k),'a3'));
+
+  // m1-1: Entrada x Saída por Dia (barras) + médias
+  barWithMeans('m1-1',labels,[
+    {label:'Entrada',backgroundColor:BLUE[0],data:entD},
+    {label:'Saída',backgroundColor:ORANGE[0],data:saiD},
+  ],{stacked:false,meanLines:[{value:mean(entD),color:BLUE[0]},{value:mean(saiD),color:ORANGE[0]}]},
+    i=>[ent.filter(r=>dk(r)===keys[i]),sai.filter(r=>dk(r)===keys[i])]);
+
+  // m1-2: Entrada x Saída por Dia (linha, c/ Saída Equipe) + médias
+  renderChart('m1-2',labels,[
+    {name:'Entrada',color:BLUE[0],rows:lab=>ent.filter(r=>dayKeyOf(r)===lab)},
+    {name:'Saída',color:ORANGE[0],rows:lab=>sai.filter(r=>dayKeyOf(r)===lab)},
+    {name:'Saída Equipe',color:ORANGE[1],rows:lab=>saiEq.filter(r=>dayKeyOf(r)===lab)},
+  ],{type:'line',meanLines:[{value:mean(entD),color:BLUE[0]},{value:mean(saiD),color:ORANGE[0]},{value:mean(saiEqD),color:ORANGE[1]}]});
+
+  // m1-3: Entrada x Saída por Dia — Cli Af 3 min (saída = fechados) + médias
+  renderChart('m1-3',labels,[
+    {name:'Entrada (Cli Af 3 min)',color:BLUE[0],wt:'a3',rows:lab=>ent.filter(r=>dayKeyOf(r)===lab)},
+    {name:'Saída (Cli Af 3 min)',color:ORANGE[0],wt:'a3',rows:lab=>sai.filter(r=>dayKeyOf(r)===lab)},
+    {name:'Saída Equipe (Cli Af 3 min)',color:ORANGE[1],wt:'a3',rows:lab=>saiEq.filter(r=>dayKeyOf(r)===lab)},
+  ],{type:'line',meanLines:[{value:mean(entA3),color:BLUE[0]},{value:mean(saiA3),color:ORANGE[0]},{value:mean(saiEqA3),color:ORANGE[1]}]});
+}
+
+// ---- Dashboard 3 - Reincidentes (visão de período) ----
+function buildR3(base){
+  const prim=base.filter(isPrim);                   // primeiras causas (1°)
+  const {dk,keys,labels,mean}=mkDays(base);
+  // 1) Reincidentes (1°) Equipe x Remoto por dia (primeiras causas) + media do total
+  const eqD=keys.map(k=>prim.filter(r=>dk(r)===k&&r.eo==='equipe').length);
+  const remD=keys.map(k=>prim.filter(r=>dk(r)===k&&r.eo==='operador').length);
+  const totD=eqD.map((v,i)=>v+remD[i]);
+  barWithMeans('r3-1',labels,[
+    {label:'Equipe',backgroundColor:GREEN[0],data:eqD},
+    {label:'Remoto',backgroundColor:GREEN[1],data:remD},
+  ],{stacked:true,meanLines:[{value:mean(totD),color:'#d1242f'}]},
+    i=>[prim.filter(r=>dk(r)===keys[i]&&r.eo==='equipe'),prim.filter(r=>dk(r)===keys[i]&&r.eo==='operador')]);
+  // 2) Top 10 primeiras causas (1°) por causa - horizontal
+  const ca=tally(prim.filter(r=>r.ca&&r.ca!=='---'),['ca']);
+  const caK=Object.keys(ca).sort((a,b)=>ca[b]-ca[a]).slice(0,10);
+  renderChart('r3-2',caK,[{name:'Qtd',color:GREEN[0],rows:k=>prim.filter(r=>r.ca===k)}],{indexAxis:'y'});
+  // 3) Top 10 equipes (eqd) com reincidencia (1°) - horizontal
+  const eqm=tally(prim.filter(r=>r.eqd&&!['---','','SEM EQUIPE','GENERICA'].includes(r.eqd)),['eqd']);
+  const eqK=Object.keys(eqm).sort((a,b)=>eqm[b]-eqm[a]).slice(0,10);
+  renderChart('r3-3',eqK,[{name:'Qtd',color:GREEN[0],rows:k=>prim.filter(r=>r.eqd===k)}],{indexAxis:'y'});
 }
 
 function buildO1(base){
@@ -1143,6 +1440,7 @@ function buildO1(base){
 }
 
 function buildXO(base){
+  if(CUR_SUB==='xO3') return buildXO_d3(base);
   const F=FSTATE[CUR_SUB]||{};
   const dias=(F.dia&&!F.dia.all&&F.dia.sel.size)?[...F.dia.sel]:['Hoje'];
   const ent=base.filter(r=>dias.includes(r.e));
@@ -1153,10 +1451,10 @@ function buildXO(base){
     {name:'Entrada OSM',color:'#1f6feb',area:'rgba(31,111,235,.12)',rows:i=>osmEnt.filter(r=>parseInt(r.he,10)===parseInt(i,10))},
     {name:'Saída OSM',color:'#d1242f',area:'rgba(209,36,47,.12)',rows:i=>osmSai.filter(r=>parseInt(r.hs,10)===parseInt(i,10))},
   ],{type:'line'});
-  setVCard('xO-sim',base.filter(r=>String(r.osm).toUpperCase()==='SIM').length);
-  setVCard('xO-nao',base.filter(r=>String(r.osm).toUpperCase()==='NÃO').length);
-  vcardRows['xO-sim']=base.filter(r=>String(r.osm).toUpperCase()==='SIM');
-  vcardRows['xO-nao']=base.filter(r=>String(r.osm).toUpperCase()==='NÃO');
+  setVCard('xO-ent',osmEnt.length);
+  setVCard('xO-sai',osmSai.length);
+  vcardRows['xO-ent']=osmEnt;
+  vcardRows['xO-sai']=osmSai;
 }
 
 function fillKpis(id,items){
@@ -1172,6 +1470,7 @@ function setVCard(id,v){
   if(el) el.textContent=fmtN(v);
 }
 function buildX1(base){
+  if(CUR_SUB==='x31') return buildX1_d3(base);
   const mk=(id,ent)=>{
     const p24=base.filter(r=>r.c==='24h+'&&r.e===ent);
     const lab=comboKeys(p24,['t','ta']);
@@ -1189,6 +1488,7 @@ function buildX1(base){
   mk('x1b','Ontem'); mk('x1c','Dias Anteriores');
 }
 function buildX2(base){
+  if(CUR_SUB==='x32') return buildX2_d3(base);
   const fe=base.filter(r=>r.s==='Fechado'&&r.sd==='Hoje');
   const lab=ENTR_ORD.filter(v=>fe.some(r=>r.e===v));
   renderChart('x1-2',lab,[
@@ -1201,6 +1501,7 @@ function buildX2(base){
   setVCard('x2-nao',vcardRows['x2-nao'].length);
 }
 function buildX3(base){
+  if(CUR_SUB==='x33') return buildX3_d3(base);
   const fe=base.filter(r=>r.s==='Fechado'&&r.sd==='Hoje');
   const mt=fe.filter(r=>r.t==='MT'&&(r.ro==='S'||r.ro==='N'));
   const lab=comboKeys(mt,['e','nt']);
@@ -1208,6 +1509,75 @@ function buildX3(base){
     {name:'S',color:'#1a7f37',rows:l=>mt.filter(r=>r.e+' · '+r.nt===l&&r.ro==='S')},
     {name:'N',color:'#d1242f',rows:l=>mt.filter(r=>r.e+' · '+r.nt===l&&r.ro==='N')},
   ],{stacked:true});
+  vcardRows['x3-sim']=mt.filter(r=>r.ro==='S');
+  vcardRows['x3-nao']=mt.filter(r=>r.ro==='N');
+  setVCard('x3-sim',vcardRows['x3-sim'].length);
+  setVCard('x3-nao',vcardRows['x3-nao'].length);
+}
+
+// ---- d3 variantes per-day + média ----
+function buildX1_d3(base){
+  const dm=r=>{const n=parseInt(r.dur,10);return isNaN(n)?0:n;};
+  const p24=base.filter(r=>r.s==='Fechado'&&dm(r)>1440);            // fechados com +24h (duração em min)
+  const men=base.filter(r=>r.s==='Fechado'&&dm(r)<=1440);           // fechados com -24h
+  const {dk,keys,labels,mean}=mkDays(base);
+  const mais=keys.map(k=>p24.filter(r=>dk(r)===k).length);
+  barWithMeans('x1b',labels,[
+    {label:'Fechados >24h',backgroundColor:'#d1242f',data:mais},
+  ],{meanLines:[{value:mean(mais),color:'#d1242f'}]},
+    i=>[p24.filter(r=>dk(r)===keys[i])]);
+  vcardRows['x24-sim']=p24;
+  vcardRows['x24-nao']=men;
+  setVCard('x24-sim',vcardRows['x24-sim'].length);
+  setVCard('x24-nao',vcardRows['x24-nao'].length);
+}
+
+function buildXO_d3(base){
+  const ent=base, sai=base.filter(r=>r.s==='Fechado');
+  const osmEnt=ent.filter(r=>String(r.osm).toUpperCase()==='SIM');
+  const osmSai=sai.filter(r=>String(r.osm).toUpperCase()==='SIM');
+  const {dk,keys,labels,mean}=mkDays(base);
+  const eD=keys.map(k=>osmEnt.filter(r=>dk(r)===k).length);
+  const sD=keys.map(k=>osmSai.filter(r=>dk(r)===k).length);
+  renderChart('xO-1',labels,[
+    {name:'Entrada OSM',color:BLUE[0],rows:lab=>osmEnt.filter(r=>dayKeyOf(r)===lab)},
+    {name:'Saída OSM',color:ORANGE[0],rows:lab=>osmSai.filter(r=>dayKeyOf(r)===lab)},
+  ],{type:'line',meanLines:[{value:mean(eD),color:BLUE[0]},{value:mean(sD),color:ORANGE[0]}]});
+  setVCard('xO-ent',osmEnt.length);
+  setVCard('xO-sai',osmSai.length);
+  vcardRows['xO-ent']=osmEnt;
+  vcardRows['xO-sai']=osmSai;
+}
+
+function buildX2_d3(base){
+  const fe=base.filter(r=>r.s==='Fechado');
+  const {dk,keys,labels,mean}=mkDays(base);
+  const sim=keys.map(k=>fe.filter(r=>dk(r)===k&&r.o==='sim').length);
+  const nao=keys.map(k=>fe.filter(r=>dk(r)===k&&r.o==='não').length);
+  const tot=sim.map((v,i)=>v+nao[i]);
+  barWithMeans('x1-2',labels,[
+    {label:'Sim',backgroundColor:GREEN[0],data:sim},
+    {label:'Não',backgroundColor:'#d1242f',data:nao},
+  ],{stacked:true,meanLines:[{value:mean(tot),color:'#5f6b7a'}]},
+    i=>[fe.filter(r=>dk(r)===keys[i]&&r.o==='sim'),fe.filter(r=>dk(r)===keys[i]&&r.o==='não')]);
+  vcardRows['x2-sim']=fe.filter(r=>r.o==='sim');
+  vcardRows['x2-nao']=fe.filter(r=>r.o==='não');
+  setVCard('x2-sim',vcardRows['x2-sim'].length);
+  setVCard('x2-nao',vcardRows['x2-nao'].length);
+}
+
+function buildX3_d3(base){
+  const fe=base.filter(r=>r.s==='Fechado');
+  const mt=fe.filter(r=>r.t==='MT'&&(r.ro==='S'||r.ro==='N'));
+  const {dk,keys,labels,mean}=mkDays(base);
+  const sim=keys.map(k=>mt.filter(r=>dk(r)===k&&r.ro==='S').length);
+  const nao=keys.map(k=>mt.filter(r=>dk(r)===k&&r.ro==='N').length);
+  const tot=sim.map((v,i)=>v+nao[i]);
+  barWithMeans('x1-3',labels,[
+    {label:'S',backgroundColor:GREEN[0],data:sim},
+    {label:'N',backgroundColor:'#d1242f',data:nao},
+  ],{stacked:true,meanLines:[{value:mean(tot),color:'#5f6b7a'}]},
+    i=>[mt.filter(r=>dk(r)===keys[i]&&r.ro==='S'),mt.filter(r=>dk(r)===keys[i]&&r.ro==='N')]);
   vcardRows['x3-sim']=mt.filter(r=>r.ro==='S');
   vcardRows['x3-nao']=mt.filter(r=>r.ro==='N');
   setVCard('x3-sim',vcardRows['x3-sim'].length);
@@ -1249,6 +1619,54 @@ function buildO2(base){
     {name:'Não Atribuído',color:GREEN[1],wt:'ct',rows:l=>ab.filter(r=>r.p+' · '+r.c===l&&!fA(r))},
   ],{stacked:true});
 }
+function buildT3(base){
+  const cons=base.filter(r=>r.cg==='Considerar');
+  const {dk,keys,labels}=mkDays(cons);
+  const tmpD=keys.map(k=>meanKey(cons.filter(r=>dk(r)===k),'tmp'));
+  const tmdD=keys.map(k=>meanKey(cons.filter(r=>dk(r)===k),'tmd'));
+  const tmeD=keys.map(k=>meanKey(cons.filter(r=>dk(r)===k),'tme'));
+  const tmaM=meanKey(cons,'tma');
+  const tmpM=meanKey(cons,'tmp');
+  const tmdM=meanKey(cons,'tmd');
+  const tmeM=meanKey(cons,'tme');
+  barWithMeans('t3-1',labels,[
+    {label:'TMP',backgroundColor:BLUE[0],data:tmpD},
+    {label:'TMD',backgroundColor:ORANGE[0],data:tmdD},
+    {label:'TME',backgroundColor:GREEN[0],data:tmeD},
+    {label:'TMA',type:'line',data:labels.map(()=>null),borderColor:'#d1242f',borderDash:[6,4],borderWidth:2,pointRadius:0,fill:false,order:99},
+  ],{stacked:true,redLabel:true,meanLines:[
+    {value:tmaM,color:'#d1242f'},
+    {value:tmpM,color:BLUE[0]},
+    {value:tmdM,color:ORANGE[0]},
+    {value:tmeM,color:GREEN[0]},
+  ]},
+    i=>[cons.filter(r=>dk(r)===keys[i])]);
+  buildT3Turno(base,'A','t3-2');
+  buildT3Turno(base,'B','t3-3');
+  buildT3Turno(base,'C','t3-4');
+}
+
+function buildT3Turno(base,turno,id){
+  const cons=base.filter(r=>r.cg==='Considerar'&&r.ts===turno);
+  const {dk,keys,labels}=mkDays(cons);
+  const tmpD=keys.map(k=>meanKey(cons.filter(r=>dk(r)===k),'tmp'));
+  const tmdD=keys.map(k=>meanKey(cons.filter(r=>dk(r)===k),'tmd'));
+  const tmeD=keys.map(k=>meanKey(cons.filter(r=>dk(r)===k),'tme'));
+  const tmaM=meanKey(cons,'tma'),tmpM=meanKey(cons,'tmp'),tmdM=meanKey(cons,'tmd'),tmeM=meanKey(cons,'tme');
+  barWithMeans(id,labels,[
+    {label:'TMP',backgroundColor:BLUE[0],data:tmpD},
+    {label:'TMD',backgroundColor:ORANGE[0],data:tmdD},
+    {label:'TME',backgroundColor:GREEN[0],data:tmeD},
+    {label:'TMA',type:'line',data:labels.map(()=>null),borderColor:'#d1242f',borderDash:[6,4],borderWidth:2,pointRadius:0,fill:false,order:99},
+  ],{stacked:true,redLabel:true,meanLines:[
+    {value:tmaM,color:'#d1242f'},
+    {value:tmpM,color:BLUE[0]},
+    {value:tmdM,color:ORANGE[0]},
+    {value:tmeM,color:GREEN[0]},
+  ]},
+    i=>[cons.filter(r=>dk(r)===keys[i])]);
+}
+
 function buildT2(base){
   const cons=base.filter(r=>r.s==='Fechado'&&r.cg==='Considerar');
   const pl=plOf(base);
@@ -1290,6 +1708,18 @@ const pl=plOf(base);
 const KPI_TITLES={abH:'Abertos Hoje',abO:'Abertos Ontem',abA:'Abertos Dias Anteriores',feH:'Fechados Hoje',feO:'Fechados Ontem',feA:'Fechados Dias Anteriores',naoAtrib:'Não Atribuídos',abAgora:'Abertos Agora',mais24:'Abertos +24h',cliAf:'Clientes Afetados (abertos)',tmaMed:'TMA Médio (fechados)',eqAtrib:'Equipes Atribuídas (abertos)',eqExec:'Equipes em Execução (abertos)',eqTotDesl:'Equipes Totais Deslocadas (fechados hoje)',prod:'Produção Total (fechados hoje / equipes deslocadas)',tmeMed:'TME Médio — TME Análise=sim'};
 let kpiRows={};
 let kpiTitles=Object.assign({},KPI_TITLES);
+kpiTitles['d3_abertos']='Abertos (período)';
+kpiTitles['d3_abertos_dia']='Abertos (média/dia)';
+kpiTitles['d3_cliAf']='Clientes Afetados (período)';
+kpiTitles['d3_cliAf_dia']='Clientes Afetados (média/dia)';
+kpiTitles['d3_fechados']='Fechados (período)';
+kpiTitles['d3_fechados_dia']='Fechados (média/dia)';
+kpiTitles['d3_tma']='TMA Médio';
+kpiTitles['d3_tme']='TME Médio';
+kpiTitles['d3_eqDia']='Média de Equipes Deslocadas';
+kpiTitles['d3_prod']='Produção média dia por equipes deslocadas';
+['A','B','C'].forEach(t=>{kpiTitles['d3_prod_t'+t]='Produção Turno '+t; kpiTitles['d3_eqDia_t'+t]='Média de Equipes Deslocadas Turno '+t;});
+['EMERGÊNCIA','COMERCIAL','PERDAS','PODA','LINHA VIVA'].forEach(g=>{kpiTitles['d3_prod_g_'+g]='Produção '+g;});
 function buildKPIs(){
   const U=UF[tab]||{};
   const base=RAW.filter(r=>passes(r,U));
@@ -1366,35 +1796,111 @@ function buildKPIs(){
   el.innerHTML=boxes.map(b=>`<div class="kpi ${b.cls}" data-k="${b.k}"><div class="v">${b.v}</div><div class="l">${b.l}</div></div>`).join('');
 }
 
+// ---- KPIs Dashboard 3 (visão de período / incidentes fechados) ----
+function buildKPIsD3(){
+  const U=UF['d3']||{};
+  const base=RAW.filter(r=>passes(r,U));
+  const fe=base.filter(r=>r.s==='Fechado');
+  const ab=base;
+  const tmaRows=fe.filter(r=>r.cg==='Considerar');
+  const tmeRows=fe.filter(r=>r.tmea==='sim');
+  const hasEqd=r=>{const v=String(r.eqd||'').trim();return v!==''&&v!=='---';};
+  const dayKey=r=>((r.mes!==undefined&&r.mes!==null)?String(r.mes):'?')+'-'+((r.d!==undefined&&r.d!==null)?String(r.d):'?');
+  const daysA={}; ab.forEach(r=>{daysA[dayKey(r)]=1;});
+  const daysB={}; fe.forEach(r=>{daysB[dayKey(r)]=1;});
+  const nA=Object.keys(daysA).length||1;
+  const nF=Object.keys(daysB).length||1;
+  const days={};
+  fe.forEach(r=>{ if(!hasEqd(r)) return; const k=dayKey(r); if(!days[k]) days[k]=new Set(); days[k].add(r.eqd); });
+  const dayVals=Object.keys(days).map(k=>days[k].size);
+  const eqDiaMed=dayVals.length? dayVals.reduce((a,b)=>a+b,0)/dayVals.length : 0;
+  const feEq=fe.filter(r=>r.eo==='equipe'&&hasEqd(r));
+  kpiRows={
+    d3_abertos:ab,
+    d3_abertos_dia:ab,
+    d3_cliAf:fe,
+    d3_cliAf_dia:fe,
+    d3_fechados:fe,
+    d3_fechados_dia:fe,
+    d3_tma:tmaRows,
+    d3_tme:tmeRows,
+    d3_prod:feEq,
+  };
+  const fmt=n=>Number(n||0).toLocaleString('pt-BR');
+  const fmt1=n=>Number(n||0).toLocaleString('pt-BR',{maximumFractionDigits:1});
+  const cliAf=sumKey(fe,'a3');
+  const eqDiaDiv=eqDiaMed>0?eqDiaMed*nF:1;
+  const boxes=[
+    {cls:'blue',k:'d3_abertos',v:fmt(ab.length),l:'Abertos (período)'},
+    {cls:'blue',k:'d3_abertos_dia',v:fmt1(ab.length/nA),l:'Abertos (média/dia)'},
+    {cls:'red',k:'d3_cliAf',v:fmt(cliAf),l:'Clientes Afetados (período)'},
+    {cls:'red',k:'d3_cliAf_dia',v:fmt1(cliAf/nF),l:'Clientes Afetados (média/dia)'},
+    {cls:'orange',k:'d3_fechados',v:fmt(fe.length),l:'Fechados (período)'},
+    {cls:'orange',k:'d3_fechados_dia',v:fmt1(fe.length/nF),l:'Fechados (média/dia)'},
+    {cls:'',k:'d3_tma',v:fmt(meanKey(tmaRows,'tma')),l:'TMA Médio'},
+    {cls:'',k:'d3_tme',v:fmt(meanKey(tmeRows,'tme')),l:'TME Médio'},
+    {cls:'',k:'d3_eqDia',v:fmt1(eqDiaMed),l:'Média de Equipes Deslocadas'},
+    {cls:'',k:'d3_prod',v:fmt1(feEq.length/eqDiaDiv),l:'Produção média dia por equipes deslocadas'},
+  ];
+  ['A','B','C'].forEach(t=>{
+    const feT=fe.filter(r=>r.eo==='equipe'&&hasEqd(r)&&r.ts===t);
+    const dt={};
+    feT.forEach(r=>{const k=dayKey(r); if(!dt[k]) dt[k]=new Set(); dt[k].add(r.eqd);});
+    const dv=Object.keys(dt).map(k=>dt[k].size);
+    const eqDiaT=dv.length? dv.reduce((a,b)=>a+b,0)/dv.length : 0;
+    kpiRows['d3_eqDia_t'+t]=feT;
+    boxes.push({cls:'',k:'d3_eqDia_t'+t,v:fmt1(eqDiaT),l:'Média de Equipes Deslocadas Turno '+t});
+    const rp=feEq.filter(r=>r.ts===t);
+    const div=eqDiaT>0?eqDiaT*nF:1;
+    kpiRows['d3_prod_t'+t]=rp;
+    boxes.push({cls:'',k:'d3_prod_t'+t,v:fmt1(rp.length/div),l:'Produção Turno '+t});
+  });
+  ['EMERGÊNCIA','COMERCIAL','PERDAS','PODA','LINHA VIVA'].forEach(g=>{
+    const rp=feEq.filter(r=>r.gpd===g);
+    const d=dCount(rp,'eqd')||1;
+    kpiRows['d3_prod_g_'+g]=rp;
+    boxes.push({cls:'',k:'d3_prod_g_'+g,v:fmt1(rp.length/d),l:'Produção '+g});
+  });
+  const el=document.getElementById('k3');
+  if(el) el.innerHTML=boxes.map(b=>`<div class="kpi ${b.cls}" data-k="${b.k}"><div class="v">${b.v}</div><div class="l">${b.l}</div></div>`).join('');
+}
+
 // ---- Top 10 ----
 let topData=[];
 let topMode={d1:'afet',d2:'afet',d3:'afet'};
-const topTitle={afet:'Top 10 Afetações (abertos)',conh:'Top 10 Cli x Tmp (abertos)'};
+function topTitleFor(t,m){const st=(t==='d3')?'fechados':'abertos';return m==='conh'?('Top 10 Cli x Tmp ('+st+')'):('Top 10 Afetações ('+st+')');}
 function fmtCxt(v){return Number(v||0).toLocaleString('pt-BR',{maximumFractionDigits:2});}
 function buildTop10(){
   const U=UF[tab]||{};
   const base=RAW.filter(r=>passes(r,U));
-  const ab=base.filter(r=>r.s==='Aberto');
+  const ab=(tab==='d3')?base.filter(r=>r.s==='Fechado'):base.filter(r=>r.s==='Aberto');
   const m=topMode[tab]||'afet';
-  const key=m==='conh'?'cxt':'ct';
+  const key=m==='conh'?'cxt':(tab==='d3'?'a3':'ct');
   const totalCt=sumKey(ab,'ct')||1;
   const totalCxt=sumKey(ab,'cxt')||1;
-  const total=key==='cxt'?totalCxt:totalCt;
+  const total=key==='cxt'?totalCxt:sumKey(ab,key)||1;
   topData=ab.slice().sort((a,b)=>(Number(b[key])||0)-(Number(a[key])||0)).slice(0,10);
   const topSum=topData.reduce((a,r)=>a+(Number(r[key])/total*100),0);
   const topCt=topData.reduce((a,r)=>a+Number(r.ct),0);
   const topCxt=topData.reduce((a,r)=>a+Number(r.cxt||0),0);
+  const topCaf=topData.reduce((a,r)=>a+Number(r.a3||0),0);
+  const cliLabel=(tab==='d3')?'Cli Af 3 min Σ '+topCaf.toLocaleString('pt-BR'):'Clts Atual Σ '+topCt.toLocaleString('pt-BR');
+  const cliVal=r=>(tab==='d3')?Number(r.a3||0).toLocaleString('pt-BR'):Number(r.ct).toLocaleString('pt-BR');
   const el=document.getElementById('top'+(tab==='d1'?'1':(tab==='d2'?'2':'3')));
-  el.innerHTML='<table class="top"><tr><th>Número</th><th>NT</th><th>Polo</th><th>Alimentador</th><th>Causa</th><th>Atribuição</th><th>OSM</th><th class="num">Clts Atual Σ '+topCt.toLocaleString('pt-BR')+'</th><th class="num">Cli x Tmp Σ '+fmtCxt(topCxt)+'</th><th class="num">% Σ '+topSum.toLocaleString('pt-BR',{maximumFractionDigits:1})+'%</th></tr>'+
-    topData.map((r,i)=>`<tr data-i="${i}"><td>${esc(r.n)}</td><td>${esc(r.nt)}</td><td>${esc(r.p)}</td><td>${esc(r.al)}</td><td>${esc(r.ca)}</td><td>${esc(r.eq)}</td><td>${esc(r.osm)}</td><td class="num">${Number(r.ct).toLocaleString('pt-BR')}</td><td class="num">${fmtCxt(r.cxt)}</td><td class="num">${(Number(r[key])/total*100).toFixed(1)}%</td></tr>`).join('')+
+  el.innerHTML='<table class="top"><tr><th>Número</th><th>NT</th><th>Polo</th><th>Alimentador</th><th>Causa</th><th>Atribuição</th><th>OSM</th><th class="num">'+cliLabel+'</th><th class="num">Cli x Tmp Σ '+fmtCxt(topCxt)+'</th><th class="num">% Σ '+topSum.toLocaleString('pt-BR',{maximumFractionDigits:1})+'%</th></tr>'+
+    topData.map((r,i)=>`<tr data-i="${i}"><td>${esc(r.n)}</td><td>${esc(r.nt)}</td><td>${esc(r.p)}</td><td>${esc(r.al)}</td><td>${esc(r.ca)}</td><td>${esc(r.eq)}</td><td>${esc(r.osm)}</td><td class="num">${cliVal(r)}</td><td class="num">${fmtCxt(r.cxt)}</td><td class="num">${(Number(r[key])/total*100).toFixed(1)}%</td></tr>`).join('')+
     '</table>';
+  el.querySelectorAll('tr[data-i]').forEach(tr=>{
+    tr.style.cursor='pointer';
+    tr.addEventListener('click',()=>{const r=topData[Number(tr.dataset.i)]; if(r) openDrillModal(r.n+' — detalhe',[r],null);});
+  });
 }
 function topRows(t){
   const U=UF[t]||{};
   const base=RAW.filter(r=>passes(r,U));
   const ab=base.filter(r=>r.s==='Aberto');
   const m=topMode[t]||'afet';
-  const key=m==='conh'?'cxt':'ct';
+  const key=m==='conh'?'cxt':(t==='d3'?'a3':'ct');
   const total=sumKey(ab,key)||1;
   const rows=ab.slice().sort((a,b)=>(Number(b[key])||0)-(Number(a[key])||0)).slice(0,10);
   return {rows,total};
@@ -1402,11 +1908,12 @@ function topRows(t){
 function exportTop10(t){
   const {rows,total}=topRows(t);
   const m=topMode[t]||'afet';
-  const key=m==='conh'?'cxt':'ct';
-  const cols=['Número','NT','Polo','Alimentador','Causa','Atribuição','OSM','Clts Atual','Cli x Tmp','%','Status','Observação','Previsão'];
+  const key=m==='conh'?'cxt':(t==='d3'?'a3':'ct');
+  const cliHeader=(t==='d3')?'Cli Af 3 min':'Clts Atual';
+  const cols=['Número','NT','Polo','Alimentador','Causa','Atribuição','OSM',cliHeader,'Cli x Tmp','%','Status','Observação','Previsão'];
   const lines=[cols.map(csvCell).join(';')];
   rows.forEach(r=>{
-    lines.push([r.n,r.nt,r.p,r.al,r.ca,r.eq,r.osm,Number(r.ct),Number(r.cxt||0),(Number(r[key])/total*100).toFixed(1)+'%','','',''].map(csvCell).join(';'));
+    lines.push([r.n,r.nt,r.p,r.al,r.ca,r.eq,r.osm,Number(t==='d3'?r.a3||0:r.ct),Number(r.cxt||0),(Number(r[key])/total*100).toFixed(1)+'%','','',''].map(csvCell).join(';'));
   });
   downloadFile('top10_incidencias_'+t+'_'+m+'_'+new Date().toISOString().slice(0,10)+'.csv','\ufeff'+lines.join('\r\n'));
 }
@@ -1415,7 +1922,7 @@ function setTopMode(t,m){
   const seg=document.getElementById('topseg'+(t==='d1'?'1':(t==='d2'?'2':'3')));
   if(seg) seg.querySelectorAll('.tsbtn').forEach(b=>b.classList.toggle('active',b.dataset.tm===m));
   const title=document.getElementById('top-title'+(t==='d1'?'1':(t==='d2'?'2':'3')));
-  if(title) title.textContent=topTitle[m];
+  if(title) title.textContent=topTitleFor(t,m);
   if(tab===t) buildTop10();
 }
 
@@ -1517,7 +2024,7 @@ function openModal(id,title){
   cfg.options.layout.padding={top:40,right:70,left:24,bottom:14};
   if(cfg.options.scales){const sc={};for(const k in cfg.options.scales){sc[k]=JSON.parse(JSON.stringify(cfg.options.scales[k]));}cfg.options.scales=sc;}
   const stacked=!!(cfg.options.scales&&cfg.options.scales.x&&cfg.options.scales.x.stacked);
-  cfg.options.plugins.totals={enabled:stacked};
+  cfg.options.plugins.totals=Object.assign({}, (base.options.plugins&&base.options.plugins.totals)||{enabled:stacked});
   if(cfg.type==='bar'||cfg.type==='line'){
     cfg.options.plugins.datalabels=Object.assign({}, cfg.options.plugins.datalabels, {font:{size:15,weight:'700'}, offset:8});
   } else {
@@ -1737,8 +2244,8 @@ function bindDrill(){
       if(!el) return;
       const k=el.dataset.k;
       const r=kpiRows[k];
-      const fld=k==='eqAtrib'?'eq':(k==='eqExec'||k==='eqTotDesl')?'eqd':k.indexOf('prod')===0?'eqd':null;
-      if(r&&r.length) openDrillModal(kpiTitles[k]||(k.indexOf('prod_')===0?'Produção '+k.slice(5):k),r,fld);
+      const fld=(k.indexOf('eq')>=0)?'eqd':(k.indexOf('prod')>=0?null:(k==='eqAtrib'?'eq':null));
+      if(r&&r.length) openDrillModal(kpiTitles[k]||k,r,fld);
     });
   });
   ['top1','top2','top3'].forEach(id=>{
@@ -1761,13 +2268,13 @@ function sw(id){
 function renderSub(sub){
   CUR_SUB=sub;
   const base=segBase(sub);
-  const fns={e1:buildE1,s1:buildS1,m1:buildM1,o1:buildO1,x1:buildX1,x2:buildX2,x3:buildX3,e2:buildE2,s2:buildS2,o2:buildO2,t2:buildT2,p2:buildP2,xO:buildXO,e3:buildE1,s3:buildS1,m3:buildM1,o3:buildO1,x31:buildX1,xO3:buildXO,x32:buildX2,x33:buildX3};
+  const fns={e1:buildE1,s1:buildS1,m1:buildM1,o1:buildO1,x1:buildX1,x2:buildX2,x3:buildX3,e2:buildE2,s2:buildS2,o2:buildO2,t2:buildT2,p2:buildP2,xO:buildXO,e3:buildE3,s3:buildS3,m3:buildM1,o3:buildR3,t3:buildT3,x31:buildX1,xO3:buildXO,x32:buildX2,x33:buildX3};
   if(fns[sub]) fns[sub](base);
 }
 function renderPage(){
-  buildKPIs();
+  if(tab==='d3') buildKPIsD3(); else buildKPIs();
   buildTop10();
-  const segs=(tab==='d1')?['e1','s1','m1','o1','x1','xO','x2','x3']:(tab==='d3')?['e3','s3','m3','o3','x31','xO3','x32','x33']:['e2','s2','o2','t2','p2'];
+  const segs=(tab==='d1')?['e1','s1','m1','o1','x1','xO','x2','x3']:(tab==='d3')?['e3','s3','m3','t3','o3','x31','xO3','x32','x33']:['e2','s2','o2','t2','p2'];
   segs.forEach(sub=>renderSub(sub));
   const U=UF[tab]||{};
   document.getElementById('sub-info').textContent=(tab==='d1')?'Dashboard (1 polo)':(tab==='d3')?'Dashboard (Mês/Dia)':'Dashboard 2 (todos os polos)';
@@ -1861,7 +2368,7 @@ function addPrintBtns(){
 }
 // ---- vcards clicaveis (+24h, Ordem 2, 5 Regras) ----
 let vcardRows={};
-const VCARD_TITLES={'x24-sim':'+24h — Abertos','x24-nao':'+24h — Fechados Hoje','x2-sim':'Ordem 2 — Fechados Hoje (sim)','x2-nao':'Ordem 2 — Fechados Hoje (não)','x3-sim':'5 Regras — Fechados Hoje MT (S)','x3-nao':'5 Regras — Fechados Hoje MT (N)'};
+const VCARD_TITLES={'x24-sim':'+24h — Abertos','x24-nao':'+24h — Fechados Hoje','x2-sim':'Ordem 2 — Fechados Hoje (sim)','x2-nao':'Ordem 2 — Fechados Hoje (não)','x3-sim':'5 Regras — Fechados Hoje MT (S)','x3-nao':'5 Regras — Fechados Hoje MT (N)','d3-x24-sim':'+24h — Fechados >24h (duração)','d3-x24-nao':'+24h — Fechados ≤24h (duração)','d3-xO-ent':'Entradas OSM','d3-xO-sai':'Saídas OSM','d3-x2-sim':'Ordem 2 — Fechados (sim)','d3-x2-nao':'Ordem 2 — Fechados (não)','d3-x3-sim':'5 Regras — Fechados MT (S)','d3-x3-nao':'5 Regras — Fechados MT (N)'};
 function bindVcards(){
   document.querySelectorAll('.vcard').forEach(vc=>{
     const vEl=vc.querySelector('.v');
@@ -1869,8 +2376,10 @@ function bindVcards(){
     vc.__bound=true;
     vc.style.cursor='pointer';
     vc.addEventListener('click',()=>{
-      const rows=vcardRows[vEl.id];
-      if(rows&&rows.length) openDrillModal(VCARD_TITLES[vEl.id]||vEl.id, rows);
+      const id=vEl.id;
+      const key=id.replace(/^d3-/,'');
+      const rows=vcardRows[key]||vcardRows[id];
+      if(rows&&rows.length) openDrillModal(VCARD_TITLES[id]||VCARD_TITLES[key]||id, rows);
     });
   });
 }

@@ -150,6 +150,7 @@ def gerar_dashboard_html(df, saida=None, log_fn=print):
     c_turno = col("Turno abertura")
     c_turno_s = col("Turno fechamento")
     c_cluster = col("Cluster duração", "Cluster duracao")
+    c_dur = col("Duração em minutos", "Duracao em minutos")
     c_rein = col("Reincidente")
     c_rein_tipo = col("Reincidente tipo")
     c_causa = col("Causa")
@@ -160,6 +161,8 @@ def gerar_dashboard_html(df, saida=None, log_fn=print):
     c_tma = col("TMA")
     c_tme = col("TME")
     c_tme_ana = col("TME Análise", "TME Analise")
+    c_tmp = col("TMP")
+    c_tmd = col("TMD")
     c_considera = col("Considerar TMA")
     c_prod = col("Produtivo/Improdutivo")
     c_proc = col("Processo (Equipe atrib.)")
@@ -253,6 +256,7 @@ def gerar_dashboard_html(df, saida=None, log_fn=print):
         cli_af3 = to_int(val(c_cli_af3))
         clts = to_int(val(c_clts))
         cxt = to_num(val(c_cli_tmp))
+        dur = to_int(val(c_dur))
         tma = to_int(val(c_tma))
         tme = to_int(val(c_tme))
         tme_ana = _norm(val(c_tme_ana))
@@ -287,6 +291,7 @@ def gerar_dashboard_html(df, saida=None, log_fn=print):
             "ta": turno_a,
             "ts": turno_s,
             "c": cluster,
+            "dur": dur,
             "rt": rein_tipo,
             "ca": causa,
             "o": ordem,
@@ -296,6 +301,8 @@ def gerar_dashboard_html(df, saida=None, log_fn=print):
             "ct": clts,
             "cxt": cxt,
             "tma": tma,
+            "tmp": to_int(val(c_tmp)),
+            "tmd": to_int(val(c_tmd)),
             "tme": tme,
             "tmea": tme_ana,
             "cg": considera,

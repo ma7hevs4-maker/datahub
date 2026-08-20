@@ -375,6 +375,7 @@ class MainWindow(QMainWindow):
         self._init_tray()
         self.setGeometry(100, 60, 620, 620)
         self.setMinimumSize(620, 620)
+        self._center()
 
         self._cfg = cfg
         self._on_executar = on_executar
@@ -399,6 +400,14 @@ class MainWindow(QMainWindow):
         self._build()
 
     # ── Montagem ──────────────────────────────────────────────────────────────
+
+    def _center(self):
+        frame = self.frameGeometry()
+        screen = QApplication.primaryScreen()
+        if screen is not None:
+            center = screen.availableGeometry().center()
+            frame.moveCenter(center)
+            self.move(frame.topLeft())
 
     def _build(self):
         root = QWidget()
