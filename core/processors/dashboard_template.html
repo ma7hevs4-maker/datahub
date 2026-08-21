@@ -322,6 +322,7 @@ table.dt tr.team-row td:nth-child(1){font-weight:600}
       <button class="segbtn" data-seg="m3"><span class="dot" style="background:#5f6b7a"></span>Entrada &amp; Saída</button>
       <button class="segbtn" data-seg="t3"><span class="dot" style="background:#b08a00"></span>TMA</button>
       <button class="segbtn" data-seg="o3"><span class="dot" style="background:#1a7f37"></span>Reincidentes</button>
+      <button class="segbtn" data-seg="o4"><span class="dot" style="background:#db2777"></span>Improdutivo</button>
       <button class="segbtn" data-seg="x31"><span class="dot" style="background:#d1242f"></span>+24h</button>
       <button class="segbtn" data-seg="xO3"><span class="dot" style="background:#0969da"></span>OSM</button>
       <button class="segbtn" data-seg="x32"><span class="dot" style="background:#8250df"></span>Ordem 2</button>
@@ -383,6 +384,16 @@ table.dt tr.team-row td:nth-child(1){font-weight:600}
         <div class="card"><h3>Reincidentes (1º) por Dia — Equipe × Remoto</h3><canvas id="d3-r3-1"></canvas></div>
         <div class="card"><h3>Top 10 Primeiras Causas (1º) — Reincidência</h3><canvas id="d3-r3-2"></canvas></div>
         <div class="card"><h3>Top 10 Equipes com Reincidência (1º)</h3><canvas id="d3-r3-3"></canvas></div>
+      </div>
+    </section>
+
+    <section class="segblock" id="seg-o4">
+      <div class="seghead"><span class="dot" style="background:#db2777"></span>Improdutivo<span class="block-hint">clique nas barras/KPIs/Top 10 para detalhar</span></div>
+      <div class="filters" id="f-o4"></div>
+      <div class="grid">
+        <div class="card"><h3>Improdutivos por Dia — Equipe × Remoto</h3><canvas id="d3-r4-1"></canvas></div>
+        <div class="card"><h3>Top 10 Causas — Improdutivo</h3><canvas id="d3-r4-2"></canvas></div>
+        <div class="card"><h3>Top 10 Equipes com Improdutivo</h3><canvas id="d3-r4-3"></canvas></div>
       </div>
     </section>
 
@@ -457,6 +468,7 @@ table.dt tr.team-row td:nth-child(1){font-weight:600}
       <tr><td>Saída (s3)</td><td>Turno Entrada, Turno Saída</td><td>—</td></tr>
       <tr><td>Entrada &amp; Saída (m3)</td><td>nenhum (gráficos já são por dia)</td><td>—</td></tr>
       <tr><td>Reincidentes (o3)</td><td>Turno Entrada, Turno Saída</td><td>—</td></tr>
+      <tr><td>Improdutivo (o4)</td><td>Turno Entrada, Turno Saída</td><td>—</td></tr>
       <tr><td>TMA (t3)</td><td>— (recorte interno por <code>Considerar TMA = Considerar</code>)</td><td>—</td></tr>
       <tr><td>+24h (x31), OSM (xO3), Ordem 2 (x32), 5 Regras (x33)</td><td>nenhum</td><td>—</td></tr>
     </table>
@@ -610,6 +622,13 @@ table.dt tr.team-row td:nth-child(1){font-weight:600}
       <li>Reincidentes (1º) Equipe × Remoto por Dia (rt contém "1°", primeiras causas) + média do total.</li>
       <li>Top 10 Primeiras Causas (reincidência "1°") por causa — barras horizontais.</li>
       <li>Top 10 Equipes (eqd) com Reincidência (1°) — barras horizontais.</li>
+    </ul>
+    <p><span class="badge">Improdutivo (o4)</span></p>
+    <ul>
+      <li>Improdutivos por Dia — Equipe × Remoto (coluna <code>Produtivo/Improdutivo = Improdutivo</code>) + média do total.</li>
+      <li>Top 10 Causas — Improdutivo — barras horizontais.</li>
+      <li>Top 10 Equipes (eqd) com Improdutivo — barras horizontais.</li>
+      <li>Cor tema: magenta (diferente do verde dos Reincidentes).</li>
     </ul>
     <p><span class="badge">+24h (x31)</span></p>
     <ul>
@@ -903,6 +922,7 @@ const SUB_CONF={
   m3:{keys:[],defs:{}},
   t3:{keys:[],defs:{}},
   o3:{keys:[['ta','Turno Entrada','ta',TURN],['ts','Turno Saída','ts',TURN]],defs:{}},
+  o4:{keys:[['ta','Turno Entrada','ta',TURN],['ts','Turno Saída','ts',TURN]],defs:{}},
   x31:{keys:[],defs:{}},
   xO3:{keys:[],defs:{}},
   x32:{keys:[],defs:{}},
@@ -1411,6 +1431,30 @@ function buildR3(base){
   const eqm=tally(prim.filter(r=>r.eqd&&!['---','','SEM EQUIPE','GENERICA'].includes(r.eqd)),['eqd']);
   const eqK=Object.keys(eqm).sort((a,b)=>eqm[b]-eqm[a]).slice(0,10);
   renderChart('r3-3',eqK,[{name:'Qtd',color:GREEN[0],rows:k=>prim.filter(r=>r.eqd===k)}],{indexAxis:'y'});
+}
+
+// ---- Dashboard 3 - Improdutivo (visão de período) ----
+const IMP_COL='#db2777', IMP_COL2='#f295c7';
+function buildR4(base){
+  const imp=base.filter(r=>String(r.pd||'')==='Improdutivo');   // improdutivos (coluna Produtivo/Improdutivo)
+  const {dk,keys,labels,mean}=mkDays(base);
+  // 1) Improdutivos Equipe x Remoto por dia + media do total
+  const eqD=keys.map(k=>imp.filter(r=>dk(r)===k&&r.eo==='equipe').length);
+  const remD=keys.map(k=>imp.filter(r=>dk(r)===k&&r.eo==='operador').length);
+  const totD=eqD.map((v,i)=>v+remD[i]);
+  barWithMeans('r4-1',labels,[
+    {label:'Equipe',backgroundColor:IMP_COL,data:eqD},
+    {label:'Remoto',backgroundColor:IMP_COL2,data:remD},
+  ],{stacked:true,meanLines:[{value:mean(totD),color:'#d1242f'}]},
+    i=>[imp.filter(r=>dk(r)===keys[i]&&r.eo==='equipe'),imp.filter(r=>dk(r)===keys[i]&&r.eo==='operador')]);
+  // 2) Top 10 causas (improdutivo) - horizontal
+  const ca=tally(imp.filter(r=>r.ca&&r.ca!=='---'),['ca']);
+  const caK=Object.keys(ca).sort((a,b)=>ca[b]-ca[a]).slice(0,10);
+  renderChart('r4-2',caK,[{name:'Qtd',color:IMP_COL,rows:k=>imp.filter(r=>r.ca===k)}],{indexAxis:'y'});
+  // 3) Top 10 equipes (eqd) com improdutivo - horizontal
+  const eqm=tally(imp.filter(r=>r.eqd&&!['---','','SEM EQUIPE','GENERICA'].includes(r.eqd)),['eqd']);
+  const eqK=Object.keys(eqm).sort((a,b)=>eqm[b]-eqm[a]).slice(0,10);
+  renderChart('r4-3',eqK,[{name:'Qtd',color:IMP_COL,rows:k=>imp.filter(r=>r.eqd===k)}],{indexAxis:'y'});
 }
 
 function buildO1(base){
@@ -2268,13 +2312,13 @@ function sw(id){
 function renderSub(sub){
   CUR_SUB=sub;
   const base=segBase(sub);
-  const fns={e1:buildE1,s1:buildS1,m1:buildM1,o1:buildO1,x1:buildX1,x2:buildX2,x3:buildX3,e2:buildE2,s2:buildS2,o2:buildO2,t2:buildT2,p2:buildP2,xO:buildXO,e3:buildE3,s3:buildS3,m3:buildM1,o3:buildR3,t3:buildT3,x31:buildX1,xO3:buildXO,x32:buildX2,x33:buildX3};
+  const fns={e1:buildE1,s1:buildS1,m1:buildM1,o1:buildO1,x1:buildX1,x2:buildX2,x3:buildX3,e2:buildE2,s2:buildS2,o2:buildO2,t2:buildT2,p2:buildP2,xO:buildXO,e3:buildE3,s3:buildS3,m3:buildM1,o3:buildR3,o4:buildR4,t3:buildT3,x31:buildX1,xO3:buildXO,x32:buildX2,x33:buildX3};
   if(fns[sub]) fns[sub](base);
 }
 function renderPage(){
   if(tab==='d3') buildKPIsD3(); else buildKPIs();
   buildTop10();
-  const segs=(tab==='d1')?['e1','s1','m1','o1','x1','xO','x2','x3']:(tab==='d3')?['e3','s3','m3','t3','o3','x31','xO3','x32','x33']:['e2','s2','o2','t2','p2'];
+  const segs=(tab==='d1')?['e1','s1','m1','o1','x1','xO','x2','x3']:(tab==='d3')?['e3','s3','m3','t3','o3','o4','x31','xO3','x32','x33']:['e2','s2','o2','t2','p2'];
   segs.forEach(sub=>renderSub(sub));
   const U=UF[tab]||{};
   document.getElementById('sub-info').textContent=(tab==='d1')?'Dashboard (1 polo)':(tab==='d3')?'Dashboard (Mês/Dia)':'Dashboard 2 (todos os polos)';
@@ -2366,6 +2410,30 @@ function addPrintBtns(){
     cont.appendChild(b);
   });
 }
+// ---- download da base ORIGINAL filtrada (Reincidentes / Improdutivo) ----
+function addExportBtns(){
+  const map={
+    'seg-o3':{fn:isPrim, fname:'reincidentes_base.csv'},
+    'seg-o4':{fn:r=>String(r.pd||'').toLowerCase().trim()==='improdutivo', fname:'improdutivo_base.csv'},
+  };
+  Object.keys(map).forEach(segId=>{
+    const sb=document.getElementById(segId);
+    if(!sb) return;
+    const head=sb.querySelector('.seghead');
+    if(!head||head.querySelector('.export-base-btn')) return;
+    const b=document.createElement('button');
+    b.type='button'; b.className='print-btn export-base-btn'; b.title='Baixar a base original filtrada por este segmento (CSV)';
+    b.innerHTML='&#11015; Base';
+    b.onclick=e=>{e.stopPropagation();
+      const lines=[FULL_COLS.join(';')];
+      RAW.forEach((r,i)=>{ if(map[segId].fn(r)) lines.push(FULL[i].map(csvCell).join(';')); });
+      if(lines.length>1) downloadFile(map[segId].fname,'\ufeff'+lines.join('\r\n'));
+      flashBtn(b,'#1a7f37');
+    };
+    const pb=head.querySelector('.print-btn');
+    if(pb) head.insertBefore(b,pb); else head.appendChild(b);
+  });
+}
 // ---- vcards clicaveis (+24h, Ordem 2, 5 Regras) ----
 let vcardRows={};
 const VCARD_TITLES={'x24-sim':'+24h — Abertos','x24-nao':'+24h — Fechados Hoje','x2-sim':'Ordem 2 — Fechados Hoje (sim)','x2-nao':'Ordem 2 — Fechados Hoje (não)','x3-sim':'5 Regras — Fechados Hoje MT (S)','x3-nao':'5 Regras — Fechados Hoje MT (N)','d3-x24-sim':'+24h — Fechados >24h (duração)','d3-x24-nao':'+24h — Fechados ≤24h (duração)','d3-xO-ent':'Entradas OSM','d3-xO-sai':'Saídas OSM','d3-x2-sim':'Ordem 2 — Fechados (sim)','d3-x2-nao':'Ordem 2 — Fechados (não)','d3-x3-sim':'5 Regras — Fechados MT (S)','d3-x3-nao':'5 Regras — Fechados MT (N)'};
@@ -2393,6 +2461,7 @@ bindSegBars();
 bindDrill();
 addMaxBtns();
 addPrintBtns();
+addExportBtns();
 bindVcards();
 sw('d1');
 </script>
