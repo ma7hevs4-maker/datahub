@@ -1188,7 +1188,7 @@ function buildE1(base){
     {name:'Equipe',color:BLUE[0],rows:v=>reinc.filter(r=>r.rt===v&&r.eo==='equipe')},
     {name:'Operador',color:BLUE[1],rows:v=>reinc.filter(r=>r.rt===v&&r.eo==='operador')},
   ],{stacked:true});
-  const primR=reinc.filter(isPrim);   // primeiras causas (1°)
+  const primR=horas.filter(isPrim);   // reincidencias 1° (rt contem "1°")
   const ca=tally(primR.filter(r=>r.ca&&r.ca!=='---'),['ca']);
   const caK=Object.keys(ca).sort((a,b)=>ca[b]-ca[a]).slice(0,15);
   renderChart('e1-4',caK,[{name:'Qtd',color:BLUE[0],rows:k=>primR.filter(r=>r.ca===k)}],{indexAxis:'y'});
