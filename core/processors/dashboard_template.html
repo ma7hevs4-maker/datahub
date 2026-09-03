@@ -1363,8 +1363,8 @@ function buildM1(base){
   ],{type:'line'});
   renderChart('m1-3',HOUR_LAB,[
     {name:'Entrada (clientes)',color:'#1f6feb',area:'rgba(31,111,235,.12)',wt:'ct',rows:i=>ent.filter(r=>parseInt(r.he,10)===parseInt(i,10))},
-    {name:'Saída (clientes)',color:'#d1242f',area:'rgba(209,36,47,.12)',wt:'ct',rows:i=>sai.filter(r=>parseInt(r.hs,10)===parseInt(i,10))},
-    {name:'Saída Equipe (clientes)',color:'#1a7f37',area:'rgba(26,127,55,.12)',wt:'ct',rows:i=>saiEq.filter(r=>parseInt(r.hs,10)===parseInt(i,10))},
+    {name:'Saída (Cli Af 3 min)',color:'#d1242f',area:'rgba(209,36,47,.12)',wt:'a3',rows:i=>sai.filter(r=>parseInt(r.hs,10)===parseInt(i,10))},
+    {name:'Saída Equipe (Cli Af 3 min)',color:'#1a7f37',area:'rgba(26,127,55,.12)',wt:'a3',rows:i=>saiEq.filter(r=>parseInt(r.hs,10)===parseInt(i,10))},
   ],{type:'line'});
 }
 
@@ -1760,6 +1760,7 @@ kpiTitles['d3_fechados']='Fechados (período)';
 kpiTitles['d3_fechados_dia']='Fechados (média/dia)';
 kpiTitles['d3_tma']='TMA Médio';
 kpiTitles['d3_tme']='TME Médio';
+kpiTitles['d3_tmd']='TMD Médio';
 kpiTitles['d3_eqDia']='Média de Equipes Deslocadas';
 kpiTitles['d3_prod']='Produção média dia por equipes deslocadas';
 ['A','B','C'].forEach(t=>{kpiTitles['d3_prod_t'+t]='Produção Turno '+t; kpiTitles['d3_eqDia_t'+t]='Média de Equipes Deslocadas Turno '+t;});
@@ -1789,6 +1790,7 @@ function buildKPIs(){
     eqExec:ab.filter(hasEqd),
     eqTotDesl:feHoje.filter(hasEqd),
     tmeMed:fe.filter(r=>r.tmea==='sim'),
+    tmdMed:fe,
   };
   const fmt=n=>Number(n||0).toLocaleString('pt-BR');
   const fmt1=n=>Number(n||0).toLocaleString('pt-BR',{maximumFractionDigits:1});
@@ -1802,8 +1804,8 @@ function buildKPIs(){
     {cls:'red',k:'mais24',v:fmt(kpiRows.mais24.length),l:'Abertos +24h'},
     {cls:'orange',k:'feH',v:fmt(kpiRows.feH.length),l:'Fechados Hoje'},
     {cls:'orange',k:'feO',v:fmt(kpiRows.feO.length),l:'Fechados Ontem'},
-    {cls:'orange',k:'feA',v:fmt(kpiRows.feA.length),l:'Fechados Dias Ant.'},
     {cls:'',k:'tmaMed',v:fmt(meanKey(kpiRows.tmaMed,'tma')),l:'TMA Médio (fechados)'},
+    {cls:'',k:'tmdMed',v:fmt(meanKey(fe,'tmd')),l:'TMD Médio (fechados)'},
     {cls:'',k:'tmeMed',v:fmt(meanKey(fe,'tme')),l:'TME Médio (fechados)'},
     {cls:'',k:'eqAtrib',v:fmt(dCount(kpiRows.eqAtrib,'eq')),l:'Equipes Atribuídas'},
     {cls:'',k:'eqExec',v:fmt(dCount(kpiRows.eqExec,'eqd')),l:'Equipes em Execução'},
@@ -1868,6 +1870,7 @@ function buildKPIsD3(){
     d3_fechados_dia:fe,
     d3_tma:tmaRows,
     d3_tme:tmeRows,
+    d3_tmd:fe,
     d3_prod:feEq,
   };
   const fmt=n=>Number(n||0).toLocaleString('pt-BR');
@@ -1882,6 +1885,7 @@ function buildKPIsD3(){
     {cls:'orange',k:'d3_fechados',v:fmt(fe.length),l:'Fechados (período)'},
     {cls:'orange',k:'d3_fechados_dia',v:fmt1(fe.length/nF),l:'Fechados (média/dia)'},
     {cls:'',k:'d3_tma',v:fmt(meanKey(tmaRows,'tma')),l:'TMA Médio'},
+    {cls:'',k:'d3_tmd',v:fmt(meanKey(fe,'tmd')),l:'TMD Médio'},
     {cls:'',k:'d3_tme',v:fmt(meanKey(tmeRows,'tme')),l:'TME Médio'},
     {cls:'',k:'d3_eqDia',v:fmt1(eqDiaMed),l:'Média de Equipes Deslocadas'},
     {cls:'',k:'d3_prod',v:fmt1(feEq.length/eqDiaDiv),l:'Produção média dia por equipes deslocadas'},

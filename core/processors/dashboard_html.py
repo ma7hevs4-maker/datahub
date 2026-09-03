@@ -1427,8 +1427,8 @@ function buildM1(base){
   ],{type:'line'});
   renderChart('m1-3',HOUR_LAB,[
     {name:'Entrada (clientes)',color:'#1f6feb',area:'rgba(31,111,235,.12)',wt:'ct',rows:i=>base.filter(r=>parseInt(r.he,10)===parseInt(i,10))},
-    {name:'Saída (clientes)',color:'#d1242f',area:'rgba(209,36,47,.12)',wt:'ct',rows:i=>base.filter(r=>r.s==='Fechado').filter(r=>parseInt(r.hs,10)===parseInt(i,10))},
-    {name:'Saída Equipe (clientes)',color:'#1a7f37',area:'rgba(26,127,55,.12)',wt:'ct',rows:i=>base.filter(r=>r.s==='Fechado'&&r.eo==='equipe').filter(r=>parseInt(r.hs,10)===parseInt(i,10))},
+    {name:'Saída (Cli Af 3 min)',color:'#d1242f',area:'rgba(209,36,47,.12)',wt:'a3',rows:i=>base.filter(r=>r.s==='Fechado').filter(r=>parseInt(r.hs,10)===parseInt(i,10))},
+    {name:'Saída Equipe (Cli Af 3 min)',color:'#1a7f37',area:'rgba(26,127,55,.12)',wt:'a3',rows:i=>base.filter(r=>r.s==='Fechado'&&r.eo==='equipe').filter(r=>parseInt(r.hs,10)===parseInt(i,10))},
   ],{type:'line'});
 }
 
@@ -1588,7 +1588,7 @@ function buildP2(base){
 }
 
 // ---- KPIs ----
-const KPI_TITLES={abH:'Abertos Hoje',abO:'Abertos Ontem',abA:'Abertos Dias Anteriores',feH:'Fechados Hoje',feO:'Fechados Ontem',feA:'Fechados Dias Anteriores',naoAtrib:'Não Atribuídos',abAgora:'Abertos Agora',mais24:'Abertos +24h',cliAf:'Clientes Afetados (abertos)',tmaMed:'TMA Médio (fechados)',eqAtrib:'Equipes Atribuídas (entrada hoje)',eqDesl:'Equipes Deslocadas (entrada hoje)',prod:'Produção Total (fechados hoje / equipes deslocadas)',tmeMed:'TME Médio — TME Análise=sim'};
+const KPI_TITLES={abH:'Abertos Hoje',abO:'Abertos Ontem',abA:'Abertos Dias Anteriores',feH:'Fechados Hoje',feO:'Fechados Ontem',naoAtrib:'Não Atribuídos',abAgora:'Abertos Agora',mais24:'Abertos +24h',cliAf:'Clientes Afetados (abertos)',tmaMed:'TMA Médio (fechados)',tmdMed:'TMD Médio (fechados)',eqAtrib:'Equipes Atribuídas (entrada hoje)',eqDesl:'Equipes Deslocadas (entrada hoje)',prod:'Produção Total (fechados hoje / equipes deslocadas)',tmeMed:'TME Médio — TME Análise=sim'};
 let kpiRows={};
 let kpiTitles=Object.assign({},KPI_TITLES);
 function buildKPIs(){
@@ -1614,6 +1614,7 @@ function buildKPIs(){
     eqAtrib:hoje,
     eqDesl:hoje,
     tmeMed:fe.filter(r=>r.tmea==='sim'),
+    tmdMed:fe,
   };
   const fmt=n=>Number(n||0).toLocaleString('pt-BR');
   const fmt1=n=>Number(n||0).toLocaleString('pt-BR',{maximumFractionDigits:1});
@@ -1627,8 +1628,8 @@ function buildKPIs(){
     {cls:'red',k:'mais24',v:fmt(kpiRows.mais24.length),l:'Abertos +24h'},
     {cls:'orange',k:'feH',v:fmt(kpiRows.feH.length),l:'Fechados Hoje'},
     {cls:'orange',k:'feO',v:fmt(kpiRows.feO.length),l:'Fechados Ontem'},
-    {cls:'orange',k:'feA',v:fmt(kpiRows.feA.length),l:'Fechados Dias Ant.'},
     {cls:'',k:'tmaMed',v:fmt(meanKey(kpiRows.tmaMed,'tma')),l:'TMA Médio (fechados)'},
+    {cls:'',k:'tmdMed',v:fmt(meanKey(fe,'tmd')),l:'TMD Médio (fechados)'},
     {cls:'',k:'tmeMed',v:fmt(meanKey(fe,'tme')),l:'TME Médio (fechados)'},
     {cls:'',k:'eqAtrib',v:fmt(dCount(kpiRows.eqAtrib,'eq')),l:'Equipes Atribuídas'},
     {cls:'',k:'eqDesl',v:fmt(dCount(kpiRows.eqDesl,'eqd')),l:'Equipes Deslocadas'},
