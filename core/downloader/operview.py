@@ -37,11 +37,49 @@ class _FalhaServidor(Exception):
 
 
 # ── Driver (visível — o login é manual) ───────────────────────────────────────
-def _criar_driver(pasta_download: str) -> webdriver.Chrome:
+# Perfil Chrome persistente: reutiliza a sessão entre execuções do loop (60 min),
+# evitando pedir login do Operview/ Microsoft a cada fluxo.
+_PERFIL_OPERViEW = os.path.join(
+    os.environ.get("APPDATA", ""), "DataHub", "operview_profile",
+)
+
+
+def _limpar_locks_perfil(perfil: str) -> None:
+    """Remove locks/chaves do perfil para reabrir sem conflito de instância."""
+    for nome in ("SingletonLock", "SingletonCookie", "SingletonSocket"):
+        lock = os.path.join(perfil, nome)
+        try:
+            if os.path.exists(lock):
+                os.remove(lock)
+        except Exception:
+            pass
+    default_dir = os.path.join(perfil, "Default")
+    for nome in ("Last Session", "Last Tabs"):
+        f = os.path.join(default_dir, nome)
+        try:
+            if os.path.exists(f):
+                os.remove(f)
+        except Exception:
+            pass
+
+
+def _criar_driver(pasta_download: str, headless: bool = False,
+                  perfil: str | None = None) -> webdriver.Chrome:
     opts = webdriver.ChromeOptions()
-    opts.add_argument("--start-maximized")
+    if headless:
+        opts.add_argument("--headless=new")
+        opts.add_argument("--window-size=1920,1080")
+        opts.add_argument("--disable-gpu")
+    else:
+        opts.add_argument("--start-maximized")
     opts.add_argument("--disable-popup-blocking")
     opts.add_argument("--disable-blink-features=AutomationControlled")
+    opts.add_argument("--no-first-run")
+    opts.add_argument("--no-default-browser-check")
+    if perfil:
+        os.makedirs(perfil, exist_ok=True)
+        _limpar_locks_perfil(perfil)
+        opts.add_argument(f"--user-data-dir={os.path.abspath(perfil)}")
     opts.add_experimental_option("excludeSwitches", ["enable-automation"])
     opts.add_experimental_option("useAutomationExtension", False)
     opts.add_experimental_option("prefs", {
@@ -316,18 +354,329 @@ def _achar_por_texto(driver, texto, tag="*"):
 
 
 def _tem_form_login(driver) -> bool:
-    if driver.find_elements(By.CSS_SELECTOR, "input[type=password]"):
+    # Só considera página de login de verdade:
+    #  1) campo de senha VISÍVEL
+    for el in driver.find_elements(By.CSS_SELECTOR, "input[type=password]"):
+        try:
+            if el.is_displayed():
+                return True
+        except Exception:
+            pass
+    #  2) página da Microsoft/Entra (domínio ou campos de e-mail/senha deles)
+    if _esta_ms_login(driver):
         return True
+    #  3) URL de autenticação explícita (caminho, não palavra solta na host)
     url = (driver.current_url or "").lower()
-    if any(k in url for k in ("login", "oauth", "adfs", "sts", "signin", "auth", "identity")):
-        return True
-    if _achar_por_texto(driver, "Entrar") or _achar_por_texto(driver, "Acessar"):
+    if any(k in url for k in ("/login", "/signin", "/auth",
+                              "/adfs", "/sts", "/oauth")):
         return True
     return False
 
 
 def _precisa_login(driver) -> bool:
     return _tem_form_login(driver)
+
+
+# ── Auto-login Microsoft/Entra (SSO do Operview) ─────────────────────────────
+# A página de login da Microsoft/Entra tem estrutura padronizada:
+#   passo 1: e-mail      →  input[name=loginfmt] / #i0116  + botão #idSIButton9
+#   passo 2: senha       →  input[name=passwd]   / #i0118  + botão #idSIButton9
+#   passo 3 (opcional):  "Continuar conectado?"           + botão #idSIButton9
+_SEL_EMAIL = "input[name='loginfmt'], #i0116, input[type=email]"
+_SEL_SENHA = "input[name='passwd'], #i0118"
+_DOMINIOS_MS = ("login.microsoftonline.com", "login.microsoft.com",
+                "login.live.com", "login.windows.net", "sts.windows.net")
+
+
+def _esta_ms_login(driver) -> bool:
+    """True se a página atual é o login da Microsoft/Entra (por domínio ou campo)."""
+    url = (driver.current_url or "").lower()
+    if any(k in url for k in _DOMINIOS_MS):
+        return True
+    try:
+        if driver.find_elements(By.CSS_SELECTOR, f"{_SEL_EMAIL}, {_SEL_SENHA}"):
+            return True
+    except Exception:
+        pass
+    return False
+
+
+def _ainda_ms(driver) -> bool:
+    """True se ainda estamos num passo de autenticação da Microsoft."""
+    url = (driver.current_url or "").lower()
+    if any(k in url for k in _DOMINIOS_MS):
+        return True
+    try:
+        return bool(driver.find_elements(By.CSS_SELECTOR, f"{_SEL_EMAIL}, {_SEL_SENHA}, #idSIButton9"))
+    except Exception:
+        return False
+
+
+def _ms_campo(driver, seletor, timeout=25):
+    try:
+        return WebDriverWait(driver, timeout).until(
+            EC.presence_of_element_located((By.CSS_SELECTOR, seletor)))
+    except Exception:
+        return None
+
+
+def _ms_botao_principal(driver, timeout=12) -> bool:
+    """Clica o botão principal da página MS (Next/Sign in/Sim = #idSIButton9)."""
+    for sel in ("#idSIButton9", "input[type='submit']", "button[type='submit']"):
+        try:
+            el = WebDriverWait(driver, timeout).until(
+                EC.element_to_be_clickable((By.CSS_SELECTOR, sel)))
+            _mouse_clicar(driver, *_coords_viewport(driver, el))
+            return True
+        except Exception:
+            continue
+    return False
+
+
+def _ativar_entrada_senha(driver, log_fn=print) -> bool:
+    """Se a Microsoft estiver em modo passwordless, revela a opção 'Usar a senha'."""
+    for texto in ("Usar a senha", "Use your password", "Entrar com a senha",
+                  "Sign in using a password", "Usar senha"):
+        for tag in ("a", "button", "div", "span"):
+            try:
+                for el in driver.find_elements(
+                        By.XPATH, f"//{tag}[contains(normalize-space(.), \"{texto}\")]"):
+                    try:
+                        if el.is_displayed():
+                            _mouse_clicar(driver, *_coords_viewport(driver, el))
+                            log_fn("  🔑 opção 'Usar a senha' ativada.")
+                            return True
+                    except Exception:
+                        continue
+            except Exception:
+                continue
+    return False
+
+
+def _tem_mfa(driver) -> bool:
+    try:
+        body = (driver.page_source or "").lower()
+    except Exception:
+        return False
+    return any(k in body for k in (
+        "approve a sign-in request", "more information required",
+        "só mais uma etapa", "verificação em duas etapas", "two-step verification",
+        "aprovar", "aprovação", "verificação adicional"))
+
+
+def _preencher_campo(driver, campo, texto) -> None:
+    """Foca, limpa e digita no campo com verificação de valor.
+
+    O send_keys às vezes não 'entra' em inputs controlados (React/Angular);
+    por isso o fallback por JS (native setter + eventos input/change).
+    """
+    try:
+        campo.click()
+    except Exception:
+        pass
+    try:
+        campo.clear()
+    except Exception:
+        pass
+    campo.send_keys(texto)
+    try:
+        if (campo.get_attribute("value") or "") != texto:
+            driver.execute_script(
+                "var el=arguments[0],s=arguments[1];"
+                "el.focus();"
+                "var setter=Object.getOwnPropertyDescriptor("
+                "HTMLInputElement.prototype,'value').set;"
+                "setter.call(el,s);"
+                "el.dispatchEvent(new Event('input',{bubbles:true}));"
+                "el.dispatchEvent(new Event('change',{bubbles:true}));",
+                campo, texto)
+    except Exception:
+        pass
+
+
+def _enviar_form_ms(driver, campo, seletor_campo, log_fn=print, timeout=5) -> bool:
+    """Envia o passo como humano: Enter no campo; se a página não avançou,
+    clica o botão principal (#idSIButton9) como reforço."""
+    try:
+        campo.send_keys(Keys.ENTER)
+    except Exception:
+        pass
+    fim = time.time() + timeout
+    while time.time() < fim:
+        try:
+            if not driver.find_elements(By.CSS_SELECTOR, seletor_campo):
+                return True
+        except Exception:
+            return True
+        time.sleep(0.5)
+    if not _ms_botao_principal(driver, timeout=3):
+        log_fn("  ⚠️  envio do formulário MS não confirmado (seguindo mesmo assim).")
+    return True
+
+
+def tentar_login_automatico(driver, cfg: OperviewConfig, log_fn=print) -> bool:
+    """Faz o login automático na página da Microsoft/Entra usando as credenciais
+    do Operview configuradas no app.
+
+    Retorna True somente quando a sessão do Operview foi aberta (ou já estava).
+    Se não for a página da MS, faltar credencial ou aparecer MFA, retorna False
+    para que o fluxo manual atual (aguardar usuário) seja usado.
+    """
+    login = (cfg.login or "").strip()
+    senha = cfg.senha or ""
+    if not login or not senha:
+        log_fn("  ⚠️  Credenciais do Operview não preenchidas "
+               "(Configurações → Operview) — login manual necessário.")
+        return False
+    url = (driver.current_url or "").lower()
+    se_em_login = _esta_ms_login(driver) or any(
+        k in url for k in ("/login", "/signin", "/auth", "/adfs", "/sts", "/oauth"))
+    if not se_em_login:
+        log_fn("  ✅ Página atual não é página de login — seguindo (Operview já acessível?).")
+        return True
+
+    log_fn("🔄 Página de login da Microsoft detectada — login automático...")
+    try:
+        campo = _ms_campo(driver, _SEL_EMAIL, timeout=15)
+        if campo is None:
+            campo = _ms_campo(driver, _SEL_SENHA, timeout=8)
+            if campo is None:
+                log_fn("  🔁 Sem campo de e-mail — confirmando entrada (sessão MS parcial? serviços de SSO).")
+                try:
+                    _ms_botao_principal(driver, timeout=8)
+                    time.sleep(2)
+                except Exception:
+                    pass
+                for _ in range(30):
+                    try:
+                        if _achar_por_texto(driver, "Consulta Incidência") is not None:
+                            log_fn("  ✅ Sessão do Operview confirmada automaticamente.")
+                            return True
+                    except Exception:
+                        pass
+                    if not _ainda_ms(driver):
+                        log_fn("  ✅ Fora da página da Microsoft — seguindo automaticamente.")
+                        return True
+                    time.sleep(1)
+                log_fn("  ⚠️  Continua numa página da Microsoft sem campo de e-mail.")
+                return False
+            _preencher_campo(driver, campo, senha)
+            _enviar_form_ms(driver, campo, _SEL_SENHA, log_fn)
+        else:
+            _preencher_campo(driver, campo, login)
+            _enviar_form_ms(driver, campo, _SEL_EMAIL, log_fn)
+
+            campo = _ms_campo(driver, _SEL_SENHA, timeout=30)
+            if campo is None:
+                if not _ativar_entrada_senha(driver, log_fn):
+                    log_fn("  ⚠️  tela de senha não apareceu (ou número pessoal exigido).")
+                    return False
+                campo = _ms_campo(driver, _SEL_SENHA, timeout=20)
+            if campo is None:
+                log_fn("  ⚠️  campo de senha não apareceu.")
+                return False
+
+            _preencher_campo(driver, campo, senha)
+            _enviar_form_ms(driver, campo, _SEL_SENHA, log_fn)
+
+        time.sleep(1.5)
+        if _esperar_elemento(driver,
+            "//*[contains(normalize-space(.), 'Stay signed in')"
+            " or contains(normalize-space(.), 'Continuar conectado')"
+            " or contains(normalize-space(.), 'Manter conectado')"
+            " or contains(normalize-space(.), 'Permanecer conectado')]",
+            timeout=10, log_fn=log_fn):
+            _ms_botao_principal(driver)
+
+        for _ in range(45):
+            try:
+                if _achar_por_texto(driver, "Consulta Incidência") is not None:
+                    log_fn("  ✅ Sessão do Operview aberta após login automático.")
+                    return True
+            except Exception:
+                pass
+            if not _ainda_ms(driver):
+                if _tem_mfa(driver):
+                    log_fn("  ⚠️  MFA exigido pela Microsoft — conclua a aprovação.")
+                    return False
+                log_fn("  ✅ Login automático efetuado (fora da página da Microsoft).")
+                return True
+            time.sleep(1)
+    except Exception as e:
+        log_fn(f"  ⚠️  Falha no login automático: {e}")
+        return False
+
+    if _tem_mfa(driver):
+        log_fn("  ⚠️  MFA exigido pela Microsoft — conclua a aprovação no manual.")
+        return False
+    log_fn("  ⚠️  Login automático não confirmou a sessão — login manual.")
+    return False
+
+
+# ── Persistência de sessão entre execuções (loop de 60 min) ───────────────────
+# Salva os cookies (Operview + Microsoft) em disco e re-injeta na próxima
+# execução via CDP — assim o fluxo em loop NÃO pede login a cada rodada.
+_SESSAO_OPERViEW = os.path.join(
+    os.environ.get("APPDATA", ""), "DataHub", "operview_sessao.json",
+)
+
+
+def _salvar_sessao(driver, log_fn=print) -> None:
+    """Persiste cookies atuais (Operview + MS) para reutilizar no próximo fluxo."""
+    try:
+        os.makedirs(os.path.dirname(_SESSAO_OPERViEW), exist_ok=True)
+        cookies = driver.get_cookies()
+        with open(_SESSAO_OPERViEW, "w", encoding="utf-8") as f:
+            json.dump(cookies, f)
+        log_fn(f"  💾 Sessão salva ({len(cookies)} cookies) para o próximo fluxo.")
+    except Exception as e:
+        log_fn(f"  ⚠️  Não foi possível salvar sessão: {e}")
+
+
+def _restaurar_sessao(driver, url: str, log_fn=print) -> bool:
+    """Injeta cookies salvos via CDP e navega. True se a sessão segue válida."""
+    if not os.path.exists(_SESSAO_OPERViEW):
+        return False
+    try:
+        with open(_SESSAO_OPERViEW, encoding="utf-8") as f:
+            cookies = json.load(f)
+        if not cookies:
+            return False
+        log_fn(f"  🔄 Restaurando sessão anterior ({len(cookies)} cookies)...")
+        for c in cookies:
+            try:
+                driver.execute_cdp_cmd("Network.setCookie", {
+                    "name":     c.get("name", ""),
+                    "value":    c.get("value", ""),
+                    "domain":   c.get("domain", ""),
+                    "path":     c.get("path", "/"),
+                    "httpOnly": c.get("httpOnly", False),
+                    "secure":   c.get("secure", False),
+                })
+            except Exception:
+                pass
+
+        driver.get(url)
+        deadline = time.time() + 20
+        while time.time() < deadline:
+            try:
+                if _achar_por_texto(driver, "Consulta Incidência") is not None:
+                    log_fn("  ✅ Sessão restaurada — Operview já autenticado.")
+                    return True
+            except Exception:
+                pass
+            try:
+                if _esta_ms_login(driver):
+                    log_fn("  ⚠️  Sessão expirada — caiu de novo no login Microsoft.")
+                    return False
+            except Exception:
+                pass
+            time.sleep(1)
+        log_fn("  ⚠️  Sessão expirada — necessária nova autenticação.")
+        return False
+    except Exception as e:
+        log_fn(f"  ⚠️  Erro ao restaurar sessão: {e}")
+        return False
 
 
 def _aguardar_spa(driver, log_fn=print, tentativas=20):
@@ -341,6 +690,60 @@ def _aguardar_spa(driver, log_fn=print, tentativas=20):
     log_fn("  ⚠️  SPA demorou a renderizar.")
 
 
+def _aguardar_estado_login(driver, log_fn=print, timeout=30):
+    """Espera o navegador estabilizar e classifica o estado de autenticação.
+
+    O Operview abre primeiro o shell Angular e só depois redireciona para o
+    login da Microsoft — checar uma única vez logo após o load gera o falso
+    "sessão ativa" (e salva sessão com 0 cookies). Aqui ficamos em loop até
+    surgir o app (marcador 'Consulta Incidência') ou uma página de login.
+
+    Retorno:
+      "ok"   → app carregado e autenticado
+      "login"→ página de login presente (Microsoft ou genérica)
+      "indefinido" → não foi possível confirmar dentro do tempo
+    """
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        try:
+            if _achar_por_texto(driver, "Consulta Incidência") is not None:
+                return "ok"
+        except Exception:
+            pass
+        try:
+            if _tem_form_login(driver):
+                return "login"
+        except Exception:
+            pass
+        time.sleep(1)
+    try:
+        if _tem_form_login(driver):
+            return "login"
+    except Exception:
+        pass
+    return "indefinido"
+
+
+def _aguardar_autenticacao(driver, timeout=60, log_fn=print):
+    """Espera o navegador concluir SOZINHO o acesso ao Operview.
+
+    Quando o perfil já tem sessão Microsoft/Operview válida, o SSO resolve
+    em segundos — mas durante esse tempo pode haver uma página de login
+    visível. Este loop NÃO desiste ao ver formulário: só confirma quando o
+    app autenticado aparece ou o tempo esgota.
+    """
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        try:
+            if _achar_por_texto(driver, "Consulta Incidência") is not None:
+                log_fn("  ✅ Sessão do Operview confirmada automaticamente.")
+                return True
+        except Exception:
+            pass
+        time.sleep(2)
+    return False
+
+
 def _aguardar_login(driver, stop_event=None, login_event=None, log_fn=print):
     deadline = time.time() + TIMEOUT_LOGIN
     while time.time() < deadline:
@@ -351,6 +754,8 @@ def _aguardar_login(driver, stop_event=None, login_event=None, log_fn=print):
             return
         if _achar_por_texto(driver, "Consulta Incidência") is not None:
             log_fn("  ✅ Sessão do Operview detectada automaticamente.")
+            if login_event:
+                login_event.set()
             return
         time.sleep(5)
     log_fn("  ⚠️  Tempo de espera de login esgotado (continuando mesmo assim).")
@@ -364,22 +769,25 @@ def _esperar_capa(driver, cap, timeout=25, log_fn=print):
     return _esperar_elemento(driver, xp, timeout, log_fn)
 
 
-def _navegar_consulta(driver, caps, pasta_local, log_fn=print, stop_event=None):
+def _navegar_consulta(driver, caps, pasta_local, log_fn=print, stop_event=None) -> bool:
     _clicar(driver, caps.get("abrir_lateral"), log_fn)
     if not _esperar_capa(driver, caps.get("menu_auditoria"), 25, log_fn):
         log_fn("  ⚠️  menu 'Auditoria' não apareceu após abrir a lateral.")
         _salvar_diagnostico(driver, pasta_local, log_fn, "_falha_lateral")
+        return False
     _clicar(driver, caps.get("menu_auditoria"), log_fn)
     if not _esperar_capa(driver, caps.get("consulta_incidencia"), 25, log_fn):
         log_fn("  ⚠️  'Consulta Incidência' não apareceu após clicar em Auditoria.")
         _salvar_diagnostico(driver, pasta_local, log_fn, "_falha_auditoria")
+        return False
     _clicar(driver, caps.get("consulta_incidencia"), log_fn)
     if _esperar_elemento(driver, "//input[@placeholder='Selecione uma data']",
                          timeout=45, log_fn=log_fn):
         log_fn("  ✅ formulário de consulta carregado (campos de data visíveis).")
-    else:
-        log_fn("  ⚠️  formulário de consulta não carregou (campos de data ausentes).")
-        _salvar_diagnostico(driver, pasta_local, log_fn, "_falha_consulta")
+        return True
+    log_fn("  ⚠️  formulário de consulta não carregou (campos de data ausentes).")
+    _salvar_diagnostico(driver, pasta_local, log_fn, "_falha_consulta")
+    return False
 
 
 # ── Preencher filtros (datas + polo) ──────────────────────────────────────────
@@ -744,22 +1152,40 @@ def baixar_incidencias(cfg: OperviewConfig, pasta_local, data_ini: datetime,
     caps = _CAPTURA
     login_event = threading.Event()
 
-    driver = _criar_driver(str(pasta))
+    driver = _criar_driver(str(pasta), perfil=_PERFIL_OPERViEW)
     try:
         log_fn(f"🌐 Abrindo Operview: {url}")
-        driver.get(url)
-        _aguardar_spa(driver, log_fn)
+        if _restaurar_sessao(driver, url, log_fn):
+            log_fn("✅ Sessão do Operview restaurada (sem login manual necessário).")
+        else:
+            driver.get(url)
+            estado = _aguardar_estado_login(driver, log_fn)
+            if estado == "ok":
+                log_fn("✅ Sessão do Operview ativa (sem login manual necessário).")
+            elif estado == "login":
+                log_fn("🔔 Login necessário no Operview.")
+                if tentar_login_automatico(driver, cfg, log_fn):
+                    _aguardar_spa(driver, log_fn)
+                else:
+                    log_fn("  ⏳ Aguardando o navegador concluir o acesso sozinho...")
+                    _aguardar_autenticacao(driver, timeout=45, log_fn=log_fn)
 
-        if _precisa_login(driver):
-            log_fn("🔔 Login necessário no Operview.")
+        # Prova definitiva de autenticação: navegar até 'Consulta Incidência'.
+        # Só se isso falhar é que o app realmente não está acessível → aí sim
+        # pedimos a confirmação de login.
+        if not _navegar_consulta(driver, caps, pasta_local, log_fn, stop_event):
+            log_fn("🔔 Operview não acessível — solicitando login manual.")
             if notificar:
                 notificar(login_event)
             log_fn("⏳ Aguardando login (faça o login e clique OK, ou até 15 min)...")
             _aguardar_login(driver, stop_event, login_event, log_fn)
+            if not _navegar_consulta(driver, caps, pasta_local, log_fn, stop_event):
+                raise OperviewNaoImplementado(
+                    "não foi possível autenticar no Operview após aguardar o login")
+            _salvar_sessao(driver, log_fn)
         else:
-            log_fn("✅ Sessão do Operview ativa (sem login manual necessário).")
+            _salvar_sessao(driver, log_fn)
 
-        _navegar_consulta(driver, caps, pasta_local, log_fn, stop_event)
         chunks = _download_chunked(driver, str(pasta), data_ini, data_fim, caps,
                                    log_fn, stop_event, polo)
 

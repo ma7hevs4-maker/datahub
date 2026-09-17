@@ -374,6 +374,8 @@ table.dt tr.team-row td:nth-child(1){font-weight:600}
         <div class="card"><h3>Tempos Médios — Considerar, por Dia — Turno A</h3><canvas id="d3-t3-2"></canvas></div>
         <div class="card"><h3>Tempos Médios — Considerar, por Dia — Turno B</h3><canvas id="d3-t3-3"></canvas></div>
         <div class="card"><h3>Tempos Médios — Considerar, por Dia — Turno C</h3><canvas id="d3-t3-4"></canvas></div>
+        <div class="card span-all"><h3>Incidentes Considerar por Tipo — BT / MT / 5RO = S / OSM = SIM</h3><canvas id="d3-t3-5"></canvas></div>
+        <div class="card span-all"><h3>Tempos Médios por Hora — Considerar + Total Fechados</h3><canvas id="d3-t3-6"></canvas></div>
       </div>
     </section>
 
@@ -734,6 +736,8 @@ const REIN=['BT – Reincidência','BT – Reincidência Coletiva','MT TRONCO �
 const isReinc=r=>REIN.includes(r.rt);
 const isIncid=r=>!REIN.includes(r.rt);
 const isPrim=r=>/1[°º]/.test(String(r.rt||''));   // primeira causa (Reincidente tipo contém "1°")
+const SEM_EQUIPE=['---','-','','SEM EQUIPE','GENERICA'];
+var okEqd=r=>{const v=String(r.eqd||'').trim();return v!==''&&!SEM_EQUIPE.includes(v);};
 const dayKeyOf=r=>String(r.d)+'/'+String(r.mes);
 function mkDays(base){
   const dk=r=>((r.mes!==undefined&&r.mes!==null)?String(r.mes):'?')+'-'+((r.d!==undefined&&r.d!==null)?String(r.d):'?');
@@ -982,6 +986,7 @@ function mk(id, cfg){
   el.onclick=ev=>handleChartClick(id, charts[id], ev);
   lastCfg[id]=cloneCfg(cfg);
   charts[id]=new Chart(el, cfg);
+  return charts[id];
 }
 function cloneCfg(cfg){
   return {
@@ -1004,7 +1009,12 @@ function dlabels(display, extra){
 }
 function dins(){
   return {color:'#ffffff',font:{size:10,weight:'700'},anchor:'center',align:'center',display:'auto',
-    backgroundColor:c=>{const ds=c.dataset&&c.dataset.backgroundColor;const col=Array.isArray(ds)?ds[c.dataIndex]:ds;return col||'#5b6b7b';},
+    backgroundColor:c=>{
+      const ds=c.dataset;if(!ds)return '#5b6b7b';
+      if(ds.type==='line') return ds.borderColor||'#5b6b7b';
+      const b=Array.isArray(ds.backgroundColor)?ds.backgroundColor[c.dataIndex]:ds.backgroundColor;
+      return b&&b!=='rgba(0,0,0,0)'?b:'#5b6b7b';
+    },
     borderRadius:3,padding:{top:1,bottom:1,left:3,right:3},
     formatter:v=>Number.isFinite(v)?(v===Math.round(v)?String(v):v.toFixed(1)):v};
 }
@@ -1025,32 +1035,48 @@ const totalsPlugin={id:'totals',afterDatasetsDraw(chart,args,opts){
   if(!meta||!meta.data||!meta.data.length) return;
   const ctx=chart.ctx;
   const ds=chart.data.datasets;
-  const n=Math.min(labels.length,meta.data.length);
+const n=Math.min(labels.length,meta.data.length);
   chart.__totRects=[];
   ctx.save();
   ctx.textAlign='center';
   ctx.textBaseline='middle';
+  ctx.font='700 11px "Segoe UI",Arial';
+  const items=[];
   for(let i=0;i<n;i++){
     let tot=0,maxV=0;
-    for(const d of ds){const v=Number(d.data[i])||0;tot+=v;if(v>maxV)maxV=v;}
+    for(const d of ds){
+      if(d.type==='line'||d.order===99) continue;
+      const v=Number(d.data[i])||0;tot+=v;if(v>maxV)maxV=v;}
     if(tot<=0) continue;
     const txt=tot>=1000?String(Math.round(tot/100)/10)+'k':String(tot);
-    ctx.font='700 11px "Segoe UI",Arial';
     const tw=ctx.measureText(txt).width;
     const px=isH?val.getPixelForValue(tot):cat.getPixelForValue(labels[i]);
     const anchorV=isStacked?tot:maxV;
     const py=isH?cat.getPixelForValue(labels[i]):val.getPixelForValue(anchorV);
-    const cy=isH?py:py-15;
-    const x1=px-tw/2-3,y1=cy-8,x2=px+tw/2+3,y2=cy+8;
-    chart.__totRects.push({x1:x1,y1:y1,x2:x2,y2:y2,i:i});
-     const tl=opts&&opts.redLabel;
+    items.push({i:i,txt:txt,tw:tw,px:px,py:py});
+  }
+  const placed=[];
+  const ok=(x1,y1,x2,y2)=>{for(const p of placed){if(x1<p.x2&&x2>p.x1&&y1<p.y2&&y2>p.y1)return false;}return true;};
+  const top=chart.chartArea?chart.chartArea.top+4:0;
+  for(const it of items){
+    const tl=opts&&opts.redLabel;
+    const bh=16,step=18;
+    let cy=(isH?it.py:it.py-15);
+    let x1=it.px-it.tw/2-3,y1=cy-bh/2,x2=it.px+it.tw/2+3,y2=cy+bh/2;
+    let guard=0;
+    while(!ok(x1,y1,x2,y2)){
+      cy-=step;y1=cy-bh/2;y2=cy+bh/2;
+      if(cy<top||++guard>80){cy=(isH?it.py:it.py-15);y1=cy-bh/2;y2=cy+bh/2;break;}
+    }
+    placed.push({x1:x1,y1:y1,x2:x2,y2:y2});
+    chart.__totRects.push({x1:x1,y1:y1,x2:x2,y2:y2,i:it.i});
      ctx.fillStyle= tl?'#d1242f':'#ffffff';
-     ctx.fillRect(x1,y1,tw+6,16);
+     ctx.fillRect(x1,y1,it.tw+6,16);
      ctx.strokeStyle= tl?'#d1242f':'#d8e0ea';
      ctx.lineWidth=1;
-     ctx.strokeRect(x1,y1,tw+6,16);
+     ctx.strokeRect(x1,y1,it.tw+6,16);
      ctx.fillStyle= tl?'#ffffff':'#1f2d3d';
-     ctx.fillText(txt,px,cy);
+     ctx.fillText(it.txt,it.px,cy);
   }
   ctx.restore();
 }};
@@ -1075,9 +1101,45 @@ const meanLinesPlugin={id:'meanLines',afterDatasetsDraw(chart){
   ctx.restore();
 }};
 Chart.register(meanLinesPlugin);
+const countOverlayPlugin={id:'countOverlay',afterDatasetsDraw(chart){
+  const ds=(chart.data.datasets||[]).find(d=>d.__countOverlay);
+  if(!ds) return;
+  const y1=chart.scales&&chart.scales.y1;
+  if(!y1) return;
+  const {ctx,chartArea:ca}=chart;
+  const x=chart.scales.x;
+  const pts=ds.data.map((v,i)=>v!=null&&isFinite(v)?{i:i,x:x.getPixelForValue(i),y:y1.getPixelForValue(v),v:v}:null);
+  ctx.save();
+  ctx.lineWidth=2;ctx.strokeStyle=ds.borderColor||'#8e44ad';
+  ctx.beginPath();
+  let started=false;
+  for(const p of pts){ if(!p||p.v<=0) continue;
+    if(!started){ctx.moveTo(p.x,p.y);started=true;}else ctx.lineTo(p.x,p.y);
+  }
+  if(started) ctx.stroke();
+  ctx.fillStyle=ds.borderColor||'#8e44ad';
+  const rects=[];
+  ctx.font='700 11px "Segoe UI",Arial';ctx.textBaseline='middle';ctx.textAlign='center';
+  for(const p of pts){ if(!p||p.v<=0) continue;
+    ctx.beginPath();ctx.arc(p.x,p.y,3,0,Math.PI*2);ctx.fill();
+    const txt=Number(p.v).toLocaleString('pt-BR');
+    const tw=ctx.measureText(txt).width;
+    const w=Math.min(tw+8,90),h=15;
+    let bx=p.x-w/2,by=p.y-h/2-2;
+    if(by<ca.top+2) by=ca.top+2;
+    if(by+h>ca.bottom-2) by=ca.bottom-2-h;
+    ctx.fillRect(bx,by,w,h);
+    ctx.fillStyle='#ffffff';ctx.fillText(txt,p.x,by+h/2);ctx.fillStyle=ds.borderColor||'#8e44ad';
+    rects.push({x1:bx,y1:by,x2:bx+w,y2:by+h,i:p.i});
+  }
+  chart.__countRects=rects;
+  ctx.restore();
+}};
+Chart.register(countOverlayPlugin);
 
 // ---- renderChart genérico + drill ----
 let drillSets={};
+let overlayDrill={};
 function storeDrill(id, labels, fn){
   drillSets[id]=[];
   for(let i=0;i<labels.length;i++) drillSets[id][i]=fn(i);
@@ -1090,24 +1152,35 @@ function chartTitle(id){
 function handleChartClick(id, chart, ev){
   if(!chart) return;
   const df=chart.canvas.getAttribute('data-drill-field')||null;
+  const cnv=chart.canvas;
+  const rect=cnv.getBoundingClientRect();
+  const x=(ev.clientX-rect.left)*(cnv.width/rect.width);
+  const y=(ev.clientY-rect.top)*(cnv.height/rect.height);
+  if(chart.__countRects&&chart.__countRects.length){
+    const hit=chart.__countRects.find(b=>x>=b.x1&&x<=b.x2&&y>=b.y1&&y<=b.y2);
+    if(hit){
+      const rows=(overlayDrill[id]&&overlayDrill[id][hit.i])||null;
+      const label=(chart.data.labels||[])[hit.i];
+      if(rows&&rows.length) openDrillModal(chartTitle(id)+(label!=null?' — '+label:''), rows, df);
+      return;
+    }
+  }
   const isLine=chart.config&&chart.config.type==='line';
   const items=chart.getElementsAtEventForMode(ev,'nearest',isLine?{intersect:false,maxDistance:40}:{intersect:true},false);
   if(items.length){
     const it=items[0];
     const label=(chart.data.labels||[])[it.index];
-    const rows=(drillSets[id]&&drillSets[id][it.index])?drillSets[id][it.index][it.datasetIndex]:null;
+    const sets=(drillSets[id]&&drillSets[id][it.index])||null;
+    let rows=null;
+    if(sets){rows=sets[it.datasetIndex]||null;if(!rows||!rows.length)rows=sets.find(s=>s&&s.length);}
     if(rows&&rows.length){openDrillModal(chartTitle(id)+(label!=null?' — '+label:''),rows,df);return;}
   }
-  const cnv=chart.canvas;
-  const rect=cnv.getBoundingClientRect();
-  const x=(ev.clientX-rect.left)*(cnv.width/rect.width);
-  const y=(ev.clientY-rect.top)*(cnv.height/rect.height);
   if(chart.__totRects&&chart.__totRects.length){
     const hit=chart.__totRects.find(b=>x>=b.x1&&x<=b.x2&&y>=b.y1&&y<=b.y2);
     if(hit){
       const sets=(drillSets[id]&&drillSets[id][hit.i])?drillSets[id][hit.i]:null;
       if(sets&&sets.length){
-        const rows=sets.reduce((a,b)=>a.concat(b),[]);
+        const rows=chart.__totSingle?(sets[0]||[]):sets.reduce((a,b)=>a.concat(b),[]);
         const label=(chart.data.labels||[])[hit.i];
         if(rows.length) openDrillModal(chartTitle(id)+(label!=null?' — '+label:''), rows, df);
       }
@@ -1119,7 +1192,9 @@ function handleChartClick(id, chart, ev){
     for(let i=ex.length-1;i>=0;i--){
       const l=ex[i];
       if(l.$layout&&l.$layout._visible&&l.$layout._box.contains({x:x,y:y})){
-        const rows=(drillSets[id]&&drillSets[id][l._index])?drillSets[id][l._index][l.$groups._set]:null;
+        const sets=(drillSets[id]&&drillSets[id][l._index])||null;
+        let rows=null;
+        if(sets){rows=sets[l.$groups._set]||null;if(!rows||!rows.length)rows=sets.find(s=>s&&s.length);}
         if(rows&&rows.length) openDrillModal(chartTitle(id)+' — '+(chart.data.labels||[])[l._index], rows, df);
         return;
       }
@@ -1192,7 +1267,7 @@ function buildE1(base){
   const ca=tally(primR.filter(r=>r.ca&&r.ca!=='---'),['ca']);
   const caK=Object.keys(ca).sort((a,b)=>ca[b]-ca[a]).slice(0,15);
   renderChart('e1-4',caK,[{name:'Qtd',color:BLUE[0],rows:k=>primR.filter(r=>r.ca===k)}],{indexAxis:'y'});
-  const eqm=tally(primR.filter(r=>r.eqd&&!['---','','SEM EQUIPE','GENERICA'].includes(r.eqd)),['eqd']);
+  const eqm=tally(primR.filter(okEqd),['eqd']);
   const eqK=Object.keys(eqm).sort((a,b)=>eqm[b]-eqm[a]).slice(0,10);
   renderChart('e1-5',eqK,[{name:'Qtd',color:BLUE[0],rows:k=>primR.filter(r=>r.eqd===k)}],{indexAxis:'y'});
 }
@@ -1204,13 +1279,19 @@ function barWithMeans(id, labels, datasets, opts, drillFn){
   const el=document.getElementById(cid);
   if(!el) return;
   const meanLines=opts.meanLines||[];
+  const wantsY1=datasets.some(d=>d.yAxisID==='y1');
+  const scales={
+    x:{stacked:!!opts.stacked,grid:{color:'#e5ebf3'},ticks:{color:'#5b6b7b',font:{size:10}}},
+    y:{stacked:!!opts.stacked,beginAtZero:true,grid:{color:'#e5ebf3'},ticks:{color:'#5b6b7b'}}};
+  if(wantsY1){
+    scales.y1={position:'right',beginAtZero:true,grid:{drawOnChartArea:false},ticks:{color:'#5b6b7b'},title:{display:false}};
+  }
   const cfg={
     type:'bar',
     data:{labels:labels,datasets:datasets},
     options:{
       responsive:true,maintainAspectRatio:false,
-      scales:{x:{stacked:!!opts.stacked,grid:{color:'#e5ebf3'},ticks:{color:'#5b6b7b',font:{size:10}}},
-              y:{stacked:!!opts.stacked,beginAtZero:true,grid:{color:'#e5ebf3'},ticks:{color:'#5b6b7b'}}},
+      scales:scales,
       plugins:{legend:{position:'bottom',labels:{boxWidth:12,font:{size:11},color:'#5b6b7b'}},
                tooltip:{enabled:true},
                datalabels:dins(),
@@ -1220,7 +1301,8 @@ function barWithMeans(id, labels, datasets, opts, drillFn){
     plugins:[]
   };
   storeDrill(cid, labels, drillFn||(()=>[]));
-  mk(cid, cfg);
+  const chart=mk(cid, cfg);
+  if(chart&&opts.totSingle) charts[cid].__totSingle=true;
 }
 function buildE3(base){
   const rows=base;
@@ -1373,40 +1455,47 @@ function buildM1_d3(base){
   const ent=base;                                   // entradas (abertos) no período
   const sai=base.filter(r=>r.s==='Fechado');        // saídas = fechados
   const saiEq=sai.filter(r=>r.eo==='equipe');
-  const dk=r=>((r.mes!==undefined&&r.mes!==null)?String(r.mes):'?')+'-'+((r.d!==undefined&&r.d!==null)?String(r.d):'?');
+  // dkEnt: agrupa entradas pela data de início
+  const dkEnt=r=>((r.mes!==undefined&&r.mes!==null)?String(r.mes):'?')+'-'+((r.d!==undefined&&r.d!==null)?String(r.d):'?');
+  // dkSai: agrupa saídas pela data fim (fallback: data início)
+  const _ms=r=>{const v=r.mes_sd;return(v!==undefined&&v!==null&&String(v).trim()!=='')?Number(v):Number(r.mes);};
+  const _ds=r=>{const v=r.d_sd;return(v!==undefined&&v!==null&&String(v).trim()!=='')?Number(v):Number(r.d);};
+  const dkSai=r=>String(_ms(r))+'-'+String(_ds(r));
   const dm={};
-  base.forEach(r=>{const k=dk(r); if(!dm[k]) dm[k]={mes:r.mes,d:r.d};});
-  const keys=Object.keys(dm).sort((a,b)=>{const A=dm[a],B=dm[b];return (Number(A.mes)-Number(B.mes))||(Number(A.d)-Number(B.d));});
+  ent.forEach(r=>{const k=dkEnt(r); if(!dm[k]) dm[k]={mes:Number(r.mes)||0,d:Number(r.d)||0};});
+  sai.forEach(r=>{const k=dkSai(r); const m=_ms(r);const d=_ds(r);if(!dm[k]) dm[k]={mes:m,d:d};});
+  const keys=Object.keys(dm).sort((a,b)=>{const A=dm[a],B=dm[b];return(A.mes-B.mes)||(A.d-B.d);});
   const labels=keys.map(k=>String(dm[k].d)+'/'+String(dm[k].mes));
   if(!labels.length) labels.push('—');
-  const dayKeyOf=r=>String(r.d)+'/'+String(r.mes);
+  const dayKeyOfEnt=r=>String(r.d)+'/'+String(r.mes);
+  const dayKeyOfSai=r=>String(_ds(r))+'/'+String(_ms(r));
   const mean=a=>{const t=a.reduce((x,y)=>x+y,0);return a.length?t/a.length:0;};
-  const entD=keys.map(k=>ent.filter(r=>dk(r)===k).length);
-  const saiD=keys.map(k=>sai.filter(r=>dk(r)===k).length);
-  const saiEqD=keys.map(k=>saiEq.filter(r=>dk(r)===k).length);
-  const entA3=keys.map(k=>sumKey(ent.filter(r=>dk(r)===k),'a3'));
-  const saiA3=keys.map(k=>sumKey(sai.filter(r=>dk(r)===k),'a3'));
-  const saiEqA3=keys.map(k=>sumKey(saiEq.filter(r=>dk(r)===k),'a3'));
+  const entD=keys.map(k=>ent.filter(r=>dkEnt(r)===k).length);
+  const saiD=keys.map(k=>sai.filter(r=>dkSai(r)===k).length);
+  const saiEqD=keys.map(k=>saiEq.filter(r=>dkSai(r)===k).length);
+  const entA3=keys.map(k=>sumKey(ent.filter(r=>dkEnt(r)===k),'a3'));
+  const saiA3=keys.map(k=>sumKey(sai.filter(r=>dkSai(r)===k),'a3'));
+  const saiEqA3=keys.map(k=>sumKey(saiEq.filter(r=>dkSai(r)===k),'a3'));
 
   // m1-1: Entrada x Saída por Dia (barras) + médias
   barWithMeans('m1-1',labels,[
     {label:'Entrada',backgroundColor:BLUE[0],data:entD},
     {label:'Saída',backgroundColor:ORANGE[0],data:saiD},
   ],{stacked:false,meanLines:[{value:mean(entD),color:BLUE[0]},{value:mean(saiD),color:ORANGE[0]}]},
-    i=>[ent.filter(r=>dk(r)===keys[i]),sai.filter(r=>dk(r)===keys[i])]);
+    i=>[ent.filter(r=>dkEnt(r)===keys[i]),sai.filter(r=>dkSai(r)===keys[i])]);
 
   // m1-2: Entrada x Saída por Dia (linha, c/ Saída Equipe) + médias
   renderChart('m1-2',labels,[
-    {name:'Entrada',color:BLUE[0],rows:lab=>ent.filter(r=>dayKeyOf(r)===lab)},
-    {name:'Saída',color:ORANGE[0],rows:lab=>sai.filter(r=>dayKeyOf(r)===lab)},
-    {name:'Saída Equipe',color:ORANGE[1],rows:lab=>saiEq.filter(r=>dayKeyOf(r)===lab)},
+    {name:'Entrada',color:BLUE[0],rows:lab=>ent.filter(r=>dayKeyOfEnt(r)===lab)},
+    {name:'Saída',color:ORANGE[0],rows:lab=>sai.filter(r=>dayKeyOfSai(r)===lab)},
+    {name:'Saída Equipe',color:ORANGE[1],rows:lab=>saiEq.filter(r=>dayKeyOfSai(r)===lab)},
   ],{type:'line',meanLines:[{value:mean(entD),color:BLUE[0]},{value:mean(saiD),color:ORANGE[0]},{value:mean(saiEqD),color:ORANGE[1]}]});
 
   // m1-3: Entrada x Saída por Dia — Cli Af 3 min (saída = fechados) + médias
   renderChart('m1-3',labels,[
-    {name:'Entrada (Cli Af 3 min)',color:BLUE[0],wt:'a3',rows:lab=>ent.filter(r=>dayKeyOf(r)===lab)},
-    {name:'Saída (Cli Af 3 min)',color:ORANGE[0],wt:'a3',rows:lab=>sai.filter(r=>dayKeyOf(r)===lab)},
-    {name:'Saída Equipe (Cli Af 3 min)',color:ORANGE[1],wt:'a3',rows:lab=>saiEq.filter(r=>dayKeyOf(r)===lab)},
+    {name:'Entrada (Cli Af 3 min)',color:BLUE[0],wt:'a3',rows:lab=>ent.filter(r=>dayKeyOfEnt(r)===lab)},
+    {name:'Saída (Cli Af 3 min)',color:ORANGE[0],wt:'a3',rows:lab=>sai.filter(r=>dayKeyOfSai(r)===lab)},
+    {name:'Saída Equipe (Cli Af 3 min)',color:ORANGE[1],wt:'a3',rows:lab=>saiEq.filter(r=>dayKeyOfSai(r)===lab)},
   ],{type:'line',meanLines:[{value:mean(entA3),color:BLUE[0]},{value:mean(saiA3),color:ORANGE[0]},{value:mean(saiEqA3),color:ORANGE[1]}]});
 }
 
@@ -1428,7 +1517,7 @@ function buildR3(base){
   const caK=Object.keys(ca).sort((a,b)=>ca[b]-ca[a]).slice(0,10);
   renderChart('r3-2',caK,[{name:'Qtd',color:GREEN[0],rows:k=>prim.filter(r=>r.ca===k)}],{indexAxis:'y'});
   // 3) Top 10 equipes (eqd) com reincidencia (1°) - horizontal
-  const eqm=tally(prim.filter(r=>r.eqd&&!['---','','SEM EQUIPE','GENERICA'].includes(r.eqd)),['eqd']);
+  const eqm=tally(prim.filter(okEqd),['eqd']);
   const eqK=Object.keys(eqm).sort((a,b)=>eqm[b]-eqm[a]).slice(0,10);
   renderChart('r3-3',eqK,[{name:'Qtd',color:GREEN[0],rows:k=>prim.filter(r=>r.eqd===k)}],{indexAxis:'y'});
 }
@@ -1452,7 +1541,7 @@ function buildR4(base){
   const caK=Object.keys(ca).sort((a,b)=>ca[b]-ca[a]).slice(0,10);
   renderChart('r4-2',caK,[{name:'Qtd',color:IMP_COL,rows:k=>imp.filter(r=>r.ca===k)}],{indexAxis:'y'});
   // 3) Top 10 equipes (eqd) com improdutivo - horizontal
-  const eqm=tally(imp.filter(r=>r.eqd&&!['---','','SEM EQUIPE','GENERICA'].includes(r.eqd)),['eqd']);
+  const eqm=tally(imp.filter(okEqd),['eqd']);
   const eqK=Object.keys(eqm).sort((a,b)=>eqm[b]-eqm[a]).slice(0,10);
   renderChart('r4-3',eqK,[{name:'Qtd',color:IMP_COL,rows:k=>imp.filter(r=>r.eqd===k)}],{indexAxis:'y'});
 }
@@ -1688,6 +1777,62 @@ function buildT3(base){
   buildT3Turno(base,'A','t3-2');
   buildT3Turno(base,'B','t3-3');
   buildT3Turno(base,'C','t3-4');
+  buildT3Tipos(base);
+  buildT3Hora(base);
+}
+
+function buildT3Tipos(base){
+  const cons=base.filter(r=>r.cg==='Considerar');
+  const tip=[['BT',r=>String(r.t||'').toUpperCase()==='BT'],['MT',r=>String(r.t||'').toUpperCase()==='MT'],['5RO=S',r=>String(r.ro||'').toUpperCase()==='S'],['OSM=SIM',r=>/sim/i.test(String(r.osm||''))]];
+  const labs=tip.map(q=>q[0]);
+  const rows=l=>cons.filter(tip.find(q=>q[0]===l)[1]);
+  const tmpD=labs.map(l=>meanKey(rows(l),'tmp'));
+  const tmdD=labs.map(l=>meanKey(rows(l),'tmd'));
+  const tmeD=labs.map(l=>meanKey(rows(l),'tme'));
+  const tmaM=meanKey(cons,'tma');
+  const tmpM=meanKey(cons,'tmp');
+  const tmdM=meanKey(cons,'tmd');
+  const tmeM=meanKey(cons,'tme');
+  barWithMeans('t3-5',labs,[
+    {label:'TMP',backgroundColor:BLUE[0],data:tmpD},
+    {label:'TMD',backgroundColor:ORANGE[0],data:tmdD},
+    {label:'TME',backgroundColor:GREEN[0],data:tmeD},
+    {label:'TMA',type:'line',data:labs.map(()=>null),borderColor:'#d1242f',borderDash:[6,4],borderWidth:2,pointRadius:0,fill:false,order:99},
+  ],{stacked:true,redLabel:true,meanLines:[
+    {value:tmaM,color:'#d1242f'},
+    {value:tmpM,color:BLUE[0]},
+    {value:tmdM,color:ORANGE[0]},
+    {value:tmeM,color:GREEN[0]},
+  ]},
+    i=>[rows(labs[i])]);
+}
+
+function buildT3Hora(base){
+  const cons=base.filter(r=>r.cg==='Considerar');
+  const fech=cons.filter(r=>r.s==='Fechado');
+  const tmpD=HOUR_LAB.map((h,i)=>meanKey(cons.filter(r=>parseInt(r.he,10)===i),'tmp'));
+  const tmdD=HOUR_LAB.map((h,i)=>meanKey(cons.filter(r=>parseInt(r.he,10)===i),'tmd'));
+  const tmeD=HOUR_LAB.map((h,i)=>meanKey(cons.filter(r=>parseInt(r.he,10)===i),'tme'));
+  const totD=HOUR_LAB.map((h,i)=>fech.filter(r=>parseInt(r.he,10)===i).length);
+  const tmaM=meanKey(cons,'tma');
+  const tmpM=meanKey(cons,'tmp');
+  const tmdM=meanKey(cons,'tmd');
+  const tmeM=meanKey(cons,'tme');
+  overlayDrill['t3-6']=[];
+  barWithMeans('t3-6',HOUR_LAB,[
+    {label:'TMP',backgroundColor:BLUE[0],data:tmpD},
+    {label:'TMD',backgroundColor:ORANGE[0],data:tmdD},
+    {label:'TME',backgroundColor:GREEN[0],data:tmeD},
+    {label:'TMA',type:'line',data:HOUR_LAB.map(()=>null),borderColor:'#d1242f',borderDash:[6,4],borderWidth:2,pointRadius:0,fill:false,order:99},
+    {label:'Total fechados',type:'line',yAxisID:'y1',data:totD,borderColor:'#8e44ad',borderWidth:0,pointRadius:0,fill:false,order:98,datalabels:{display:false},__countOverlay:true},
+  ],{stacked:true,redLabel:true,meanLines:[
+    {value:tmaM,color:'#d1242f'},
+    {value:tmpM,color:BLUE[0]},
+    {value:tmdM,color:ORANGE[0]},
+    {value:tmeM,color:GREEN[0]},
+  ],
+    totSingle:true},
+    i=>{const c=cons.filter(r=>parseInt(r.he,10)===i);const f=fech.filter(r=>parseInt(r.he,10)===i);overlayDrill['t3-6'][i]=f;return [c,c,c,c,f];});
 }
 
 function buildT3Turno(base,turno,id){
@@ -1716,13 +1861,12 @@ function buildT2(base){
   const pl=plOf(base);
   renderChart('t2-1',pl,[{name:'Qtd',color:'#1f6feb',rows:p=>cons.filter(r=>r.p===p)}],{});
   const fe=base.filter(r=>r.s==='Fechado');
-  const eqm=tally(fe.filter(r=>!['---','','SEM EQUIPE','GENERICA'].includes(r.eqd)),['eqd']);
+  const eqm=tally(fe.filter(okEqd),['eqd']);
   const eqK=Object.keys(eqm).sort((a,b)=>eqm[b]-eqm[a]).slice(0,20);
-  renderChart('t2-2',eqK,[{name:'Qtd',color:'#f0820f',rows:k=>fe.filter(r=>r.eqd===k&&!['---','','SEM EQUIPE','GENERICA'].includes(r.eqd))}],{indexAxis:'y'});
+  renderChart('t2-2',eqK,[{name:'Qtd',color:'#f0820f',rows:k=>fe.filter(r=>r.eqd===k&&okEqd(r))}],{indexAxis:'y'});
   renderChart('t2-3',pl,[{name:'Média TMA',color:'#1f6feb',rows:p=>cons.filter(r=>r.p===p),val:rows=>meanKey(rows,'tma')}],{});
 }
 function buildP2(base){
-const okEqd=r=>{const v=String(r.eqd||'').trim();return v!==''&&v!=='---';};
 const pl=plOf(base);
   const at=base.filter(r=>!isIgnCausa(r)&&r.s==='Aberto');
   const lab1=comboKeys(at,['p','e']);
@@ -1849,7 +1993,6 @@ function buildKPIsD3(){
   const fe=base.filter(r=>r.s==='Fechado');
   const ab=base;
   const tmaRows=fe.filter(r=>r.cg==='Considerar');
-  const tmeRows=fe.filter(r=>r.tmea==='sim');
   const hasEqd=r=>{const v=String(r.eqd||'').trim();return v!==''&&v!=='---';};
   const dayKey=r=>((r.mes!==undefined&&r.mes!==null)?String(r.mes):'?')+'-'+((r.d!==undefined&&r.d!==null)?String(r.d):'?');
   const daysA={}; ab.forEach(r=>{daysA[dayKey(r)]=1;});
@@ -1869,7 +2012,7 @@ function buildKPIsD3(){
     d3_fechados:fe,
     d3_fechados_dia:fe,
     d3_tma:tmaRows,
-    d3_tme:tmeRows,
+    d3_tme:fe,
     d3_tmd:fe,
     d3_prod:feEq,
   };
@@ -1886,7 +2029,7 @@ function buildKPIsD3(){
     {cls:'orange',k:'d3_fechados_dia',v:fmt1(fe.length/nF),l:'Fechados (média/dia)'},
     {cls:'',k:'d3_tma',v:fmt(meanKey(tmaRows,'tma')),l:'TMA Médio'},
     {cls:'',k:'d3_tmd',v:fmt(meanKey(fe,'tmd')),l:'TMD Médio'},
-    {cls:'',k:'d3_tme',v:fmt(meanKey(tmeRows,'tme')),l:'TME Médio'},
+    {cls:'',k:'d3_tme',v:fmt1((()=>{const dm={};fe.forEach(r=>{const k=dayKey(r);if(!dm[k])dm[k]=[];dm[k].push(Number(r.tme)||0);});const mns=Object.values(dm).map(a=>a.reduce((x,y)=>x+y,0)/a.length);return mns.length?mns.reduce((a,b)=>a+b,0)/mns.length:0;})()),l:'TME Médio'},
     {cls:'',k:'d3_eqDia',v:fmt1(eqDiaMed),l:'Média de Equipes Deslocadas'},
     {cls:'',k:'d3_prod',v:fmt1(feEq.length/eqDiaDiv),l:'Produção média dia por equipes deslocadas'},
   ];

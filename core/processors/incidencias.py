@@ -245,6 +245,10 @@ def tratar_incidencias(caminho: Path, log_fn=print) -> pd.DataFrame:
     df["Mês"] = df["_dt_inicio"].dt.month
     df["Dia"] = df["_dt_inicio"].dt.day
 
+    # Mês / Dia da Data Fim (saída)
+    df["Mês Saída"] = df["_dt_fim"].dt.month
+    df["Dia Saída"] = df["_dt_fim"].dt.day
+
     # Duração
     if "Duração" in df.columns:
         df["Duração em minutos"] = df["Duração"].apply(_converter_duracao)

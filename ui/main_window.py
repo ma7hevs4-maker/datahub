@@ -11,11 +11,12 @@ Todo o fluxo (core/) fica inalterado.
 """
 import sys
 import calendar
+import threading
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Callable
 
-from PyQt6.QtCore import Qt, pyqtSignal, QDate, QSize, QRectF, QPointF
+from PyQt6.QtCore import Qt, pyqtSignal, QDate, QSize, QRectF, QPointF, QTimer
 from PyQt6.QtGui import (
     QFontDatabase, QIcon, QColor, QTextCharFormat,
     QPixmap, QPainter, QPolygonF, QPen, QPalette,
@@ -361,6 +362,7 @@ class MainWindow(QMainWindow):
     formato_signal = pyqtSignal(str)
     operview_login_signal = pyqtSignal(object)
     quit_signal = pyqtSignal()
+    update_check_signal = pyqtSignal(object)
 
     def __init__(self, cfg: AppConfig, on_executar: Callable,
                  on_parar: Callable, on_tratar: Callable):
@@ -393,11 +395,14 @@ class MainWindow(QMainWindow):
         self.formato_signal.connect(self._set_formato)
         self.operview_login_signal.connect(self._mostrar_aviso_login)
         self.concluido_signal.connect(self._mostrar_concluido)
+        self.update_check_signal.connect(self._on_update_check)
 
         self._app.setStyleSheet(_build_style(self._tema))
         _apply_palette(self._app, self._tema)
         _set_fonts()
         self._build()
+
+        QTimer.singleShot(4000, self._checar_update_automatico)
 
     # ── Montagem ──────────────────────────────────────────────────────────────
 
@@ -1092,6 +1097,33 @@ class MainWindow(QMainWindow):
             return
         launch_updater(bat)
 
+    def _checar_update_automatico(self):
+        """Checa nova versão em background (não bloqueia a UI) e avisa na UI."""
+        if not is_installed():
+            return
+
+        def _worker():
+            try:
+                res = check_for_update(REPO)
+            except Exception:
+                res = None
+            self.update_check_signal.emit(res)
+
+        threading.Thread(target=_worker, daemon=True).start()
+
+    def _on_update_check(self, res):
+        if res is None:
+            return
+        tag, url = res
+        try:
+            self._update_status.setText(f"Nova versão {tag} disponível!")
+            self._tray.showMessage(
+                "DataHub",
+                f"Nova versão {tag} disponível. Abra Atualização (GitHub) para baixar.",
+                QSystemTrayIcon.MessageIcon.Information, 8000)
+        except Exception:
+            pass
+
     # ── Log público (thread-safe) ──────────────────────────────────────────────
 
     def log(self, mensagem: str):
@@ -1172,11 +1204,22 @@ class MainWindow(QMainWindow):
         QMessageBox.information(self, "DataHub", mensagem)
 
     def _mostrar_aviso_login(self, login_event):
-        QMessageBox.information(
-            self, "Operview — Login necessário",
+        box = QMessageBox(self)
+        box.setWindowTitle("Operview — Login necessário")
+        box.setIcon(QMessageBox.Icon.Information)
+        box.setText(
             "O download do Operview precisa de login.\n\n"
             "Faça o login no navegador que foi aberto e clique OK para continuar.",
         )
+        box.setStandardButtons(QMessageBox.StandardButton.Ok)
+        if login_event is not None:
+            def _fechar_se_sessao():
+                if login_event.is_set():
+                    box.accept()
+            timer = QTimer(box)
+            timer.timeout.connect(_fechar_se_sessao)
+            timer.start(500)
+        box.exec()
         if login_event is not None:
             login_event.set()
 

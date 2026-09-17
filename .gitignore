@@ -2,11 +2,20 @@
 dist/
 build/
 build_log.txt
+build.log
 DataHub.spec
 __pycache__/
 *.pyc
 DataHub.spec
 *.exe
+
+# Inno Setup outputs
+iscc.err
+iscc.log
+iscc.out
+
+# Artefatos soltos
+q
 
 # Ambiente
 .venv/
