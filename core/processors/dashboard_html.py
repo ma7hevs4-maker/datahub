@@ -273,7 +273,11 @@ def gerar_dashboard_html(df, saida=None, log_fn=print):
         equipe = _norm(val(c_equipe))
         equi_d = _norm(val(c_equi_d))
         equi_op = _norm(val(c_equi_op)).lower()
-        regras = _norm(val(c_regras))
+        regras = _norm(val(c_regras)).upper()
+        if regras in ("S", "SIM", "Y", "YES", "1"):
+            regras = "S"
+        elif regras in ("N", "NAO", "NÃO", "NO", "0"):
+            regras = "N"
         osm = _norm(val(c_osm))
         suc = _norm(val(c_suc))
         atr = _norm(val(c_atr))
