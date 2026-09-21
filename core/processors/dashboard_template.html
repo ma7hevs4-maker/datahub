@@ -371,10 +371,11 @@ table.dt tr.team-row td:nth-child(1){font-weight:600}
       <div class="filters" id="f-t3"></div>
       <div class="grid g-tma">
         <div class="card span-all"><h3>Tempos Médios (TMA / TMP / TMD / TME) — Considerar, por Dia (Geral)</h3><canvas id="d3-t3-1"></canvas></div>
+        <div class="card span-all"><h3>Incidentes Considerar por Tipo — BT / MT / 5RO = S / OSM = SIM</h3><canvas id="d3-t3-5"></canvas></div>
         <div class="card"><h3>Tempos Médios — Considerar, por Dia — Turno A</h3><canvas id="d3-t3-2"></canvas></div>
         <div class="card"><h3>Tempos Médios — Considerar, por Dia — Turno B</h3><canvas id="d3-t3-3"></canvas></div>
         <div class="card"><h3>Tempos Médios — Considerar, por Dia — Turno C</h3><canvas id="d3-t3-4"></canvas></div>
-        <div class="card span-all"><h3>Incidentes Considerar por Tipo — BT / MT / 5RO = S / OSM = SIM</h3><canvas id="d3-t3-5"></canvas></div>
+        <div class="card span-all"><h3>Tempos Médios — Considerar, por Hora de Saída (fechados) + Entrada A/B/C do turno de abertura</h3><canvas id="d3-t3-7"></canvas></div>
         <div class="card span-all"><h3>Tempos Médios por Hora — Considerar + Total Fechados</h3><canvas id="d3-t3-6"></canvas></div>
       </div>
     </section>
@@ -1137,6 +1138,117 @@ const countOverlayPlugin={id:'countOverlay',afterDatasetsDraw(chart){
 }};
 Chart.register(countOverlayPlugin);
 
+// ---- plugin: composição por turno de ENTRADA (régua ao lado da barra do dia) ----
+const ENTRADA_COLORS={A:'#2da44e',B:'#e3a008',C:'#8b5cf6'};
+const ENTRADA_LEGEND=['A','B','C'];
+const ENTRADA_DRAW=['C','B','A']; // desenha de baixo p/ cima; A fica no topo
+const entradaCompPlugin={id:'entradaComp',beforeDatasetsDraw(chart){
+  const comp=chart.__entradaComp;
+  if(!comp) return;
+  const {ctx,chartArea:ca}=chart;
+  const meta=chart.getDatasetMeta(0);
+  if(!meta||!meta.data||!meta.data.length) return;
+  const n=Math.min(comp.length,meta.data.length);
+  const barW=meta.data[0]?(meta.data[0].width||8):8;
+  const gw=Math.max(18,Math.min(30,barW*0.75));
+  const barDs=chart.data.datasets.filter(d=>!d.type||d.type==='bar');
+  ctx.save();
+  chart.__entradaRects=[];
+  for(let i=0;i<n;i++){
+    const b=meta.data[i];
+    if(!b) continue;
+    const sum=(barDs.reduce((s,d)=>s+(Number(d.data[i])||0),0));
+    const top=yPix(sum);
+    if(!(sum>0)||top>=ca.bottom-1) continue;
+    const x=b.x+barW/2+3;
+    const totalH=ca.bottom-top;
+    let y0=ca.bottom;
+    for(const t of ENTRADA_DRAW){
+      const pct=comp[i][t]||0;
+      const segH=totalH*(pct/100);
+      const y1=y0-segH;
+      ctx.fillStyle=ENTRADA_COLORS[t];
+      ctx.fillRect(x,y1,gw,segH);
+      ctx.strokeStyle='#ffffff';ctx.lineWidth=1;
+      ctx.strokeRect(x,y1,gw,segH);
+      if(segH>=14){
+        const dl=chart.options.plugins&&chart.options.plugins.datalabels;
+        let dsize=(dl&&dl.font&&dl.font.size)||10;
+        if(chart.canvas&&chart.canvas.id==='modal-canvas') dsize=Math.round(dsize*0.8);
+        ctx.font='700 '+dsize+'px "Segoe UI",Arial';
+        const txt=Math.round(pct)+'%';
+        const tw=ctx.measureText(txt).width;
+        const ch=dsize+2;const cw=tw+6;
+        const cx=x+gw/2;
+        const cy=y1+segH/2;
+        ctx.fillStyle=ENTRADA_COLORS[t];
+        roundRectAll(ctx,cx-cw/2,cy-ch/2,cw,ch,3);
+        ctx.fillStyle='#ffffff';ctx.textAlign='center';ctx.textBaseline='middle';
+        ctx.fillText(txt,cx,cy);
+      }
+      y0=y1;
+    }
+    chart.__entradaRects.push({x1:x,y1:top,x2:x+gw,y2:ca.bottom,i:i});
+  }
+  ctx.restore();
+  function yPix(sum){
+    const ax=chart.scales.y;
+    if(!ax) return ca.bottom;
+    let p=ax.getPixelForValue(sum);
+    if(p<ca.top) p=ca.top;
+    if(p>ca.bottom) p=ca.bottom;
+    return p;
+  }
+}};
+Chart.register(entradaCompPlugin);
+
+// ---- plugin: destaque do turno com maior TMA no t3-6 ----
+const horaTurnoPlugin={id:'horaTurno',beforeDatasetsDraw(chart){
+  const st=chart.__horaTurno;
+  if(!st||!st.hours||!st.hours.length) return;
+  const {ctx,chartArea:ca}=chart;
+  const barIdx=[];chart.data.datasets.forEach((d,j)=>{if(!d.type||d.type==='bar')barIdx.push(j);});
+  const bars=barIdx.map(j=>chart.getDatasetMeta(j)).filter(m=>m&&m.data&&m.data.length);
+  if(!bars.length) return;
+  const base=bars[0];
+  const w=base.data[0]?(base.data[0].width||14):14;
+  ctx.save();
+  ctx.beginPath();
+  for(const i of st.hours){
+    if(i<0||i>=base.data.length) continue;
+    const b=base.data[i];
+    let top=ca.bottom;
+    for(const m of bars){const e=m.data[i];if(e&&Number.isFinite(e.y))top=Math.min(top,e.y);}
+    const x=b.x-w/2-2,y=top-2,ww=w+4,hh=ca.bottom-top+4;
+    ctx.rect(x,y,ww,hh);
+  }
+  ctx.strokeStyle='#d1242f';ctx.lineWidth=1.75;
+  ctx.stroke();
+  ctx.restore();
+},afterDatasetsDraw(chart){
+  const st=chart.__horaTurno;
+  if(!st||!st.hours||!st.hours.length) return;
+  const {ctx,chartArea:ca}=chart;
+  ctx.save();
+  const txt='Turno '+st.turno+' · TMA médio '+Math.round(st.max)+' min · sem o turno: '+Math.round(st.sem)+' min · impacto +'+Math.round(st.imp)+' min (média geral '+Math.round(st.geral)+')';
+  ctx.font='700 10px "Segoe UI",Arial';
+  const tw=ctx.measureText(txt).width;
+  const bw=tw+16;
+  const bx=ca.left+(ca.right-ca.left-bw)/2, by=ca.top-21;
+  ctx.fillStyle='#d1242f';
+  roundRectAll(ctx,bx,by,bw,19,9);
+  ctx.fillStyle='#ffffff';ctx.textAlign='center';ctx.textBaseline='middle';
+  ctx.fillText(txt,bx+bw/2,by+9.5);
+  ctx.restore();
+}};
+Chart.register(horaTurnoPlugin);
+function roundRectAll(ctx,x,y,w,h,r){
+  ctx.beginPath();
+  ctx.moveTo(x+r,y);ctx.arcTo(x+w,y,x+w,y+h,r);ctx.arcTo(x+w,y+h,x,y+h,r);
+  ctx.arcTo(x,y+h,x,y,r);ctx.arcTo(x,y,x+w,y,r);ctx.closePath();
+  ctx.fill();
+}
+
 // ---- renderChart genérico + drill ----
 let drillSets={};
 let overlayDrill={};
@@ -1162,6 +1274,18 @@ function handleChartClick(id, chart, ev){
       const rows=(overlayDrill[id]&&overlayDrill[id][hit.i])||null;
       const label=(chart.data.labels||[])[hit.i];
       if(rows&&rows.length) openDrillModal(chartTitle(id)+(label!=null?' — '+label:''), rows, df);
+      return;
+    }
+  }
+  if(chart.__entradaRects&&chart.__entradaRects.length){
+    const hit=chart.__entradaRects.find(b=>x>=b.x1&&x<=b.x2&&y>=b.y1&&y<=b.y2);
+    if(hit){
+      const sets=(drillSets[id]&&drillSets[id][hit.i])?drillSets[id][hit.i]:null;
+      if(sets&&sets.length){
+        const rows=sets.reduce((a,b)=>a.concat(b),[]);
+        const label=(chart.data.labels||[])[hit.i];
+        if(rows.length) openDrillModal(chartTitle(id)+(label!=null?' — '+label:''), rows, df);
+      }
       return;
     }
   }
@@ -1303,6 +1427,7 @@ function barWithMeans(id, labels, datasets, opts, drillFn){
   storeDrill(cid, labels, drillFn||(()=>[]));
   const chart=mk(cid, cfg);
   if(chart&&opts.totSingle) charts[cid].__totSingle=true;
+  return chart;
 }
 function buildE3(base){
   const rows=base;
@@ -1777,8 +1902,43 @@ function buildT3(base){
   buildT3Turno(base,'A','t3-2');
   buildT3Turno(base,'B','t3-3');
   buildT3Turno(base,'C','t3-4');
+  buildT3HoraTurno(base);
   buildT3Tipos(base);
   buildT3Hora(base);
+}
+
+function buildT3HoraTurno(base){
+  const cons=base.filter(r=>r.cg==='Considerar');
+  const tmpD=HOUR_LAB.map((h,i)=>meanKey(cons.filter(r=>parseInt(r.hs,10)===i),'tmp'));
+  const tmdD=HOUR_LAB.map((h,i)=>meanKey(cons.filter(r=>parseInt(r.hs,10)===i),'tmd'));
+  const tmeD=HOUR_LAB.map((h,i)=>meanKey(cons.filter(r=>parseInt(r.hs,10)===i),'tme'));
+  const tmaM=meanKey(cons,'tma');
+  const tmpM=meanKey(cons,'tmp');
+  const tmdM=meanKey(cons,'tmd');
+  const tmeM=meanKey(cons,'tme');
+  const chart=barWithMeans('t3-7',HOUR_LAB,[
+    {label:'TMP',backgroundColor:BLUE[0],data:tmpD},
+    {label:'TMD',backgroundColor:ORANGE[0],data:tmdD},
+    {label:'TME',backgroundColor:GREEN[0],data:tmeD},
+    {label:'TMA',type:'line',data:HOUR_LAB.map(()=>null),borderColor:'#d1242f',borderDash:[6,4],borderWidth:2,pointRadius:0,fill:false,order:99},
+    {label:'/ Entrada A',backgroundColor:'#2da44e',data:HOUR_LAB.map(()=>null),stack:'_ent',order:98,borderWidth:0},
+    {label:'/ Entrada B',backgroundColor:'#e3a008',data:HOUR_LAB.map(()=>null),stack:'_ent',order:98,borderWidth:0},
+    {label:'/ Entrada C',backgroundColor:'#8b5cf6',data:HOUR_LAB.map(()=>null),stack:'_ent',order:98,borderWidth:0},
+  ],{stacked:true,redLabel:true,meanLines:[
+    {value:tmaM,color:'#d1242f'},
+    {value:tmpM,color:BLUE[0]},
+    {value:tmdM,color:ORANGE[0]},
+    {value:tmeM,color:GREEN[0]},
+  ]},
+    i=>[cons.filter(r=>parseInt(r.hs,10)===i)]);
+  if(chart){
+    chart.__entradaComp=HOUR_LAB.map((h,i)=>{
+      const hour=cons.filter(r=>parseInt(r.hs,10)===i);
+      const n=hour.length||1;
+      const pct=t=>Math.round(100*hour.filter(r=>r.ta===t).length/n);
+      return {A:pct('A'),B:pct('B'),C:pct('C')};
+    });
+  }
 }
 
 function buildT3Tipos(base){
@@ -1819,7 +1979,7 @@ function buildT3Hora(base){
   const tmdM=meanKey(cons,'tmd');
   const tmeM=meanKey(cons,'tme');
   overlayDrill['t3-6']=[];
-  barWithMeans('t3-6',HOUR_LAB,[
+  const chart=barWithMeans('t3-6',HOUR_LAB,[
     {label:'TMP',backgroundColor:BLUE[0],data:tmpD},
     {label:'TMD',backgroundColor:ORANGE[0],data:tmdD},
     {label:'TME',backgroundColor:GREEN[0],data:tmeD},
@@ -1833,6 +1993,29 @@ function buildT3Hora(base){
   ],
     totSingle:true},
     i=>{const c=cons.filter(r=>parseInt(r.he,10)===i);const f=fech.filter(r=>parseInt(r.he,10)===i);overlayDrill['t3-6'][i]=f;return [c,c,c,c,f];});
+  if(chart){
+    const turnOfHour=h=>h<8?'A':(h<15?'B':'C');
+    const tmaByTurn={A:meanKey(cons.filter(r=>r.ta==='A'),'tma'),
+                     B:meanKey(cons.filter(r=>r.ta==='B'),'tma'),
+                     C:meanKey(cons.filter(r=>r.ta==='C'),'tma')};
+    let dom='A';
+    if(tmaByTurn.B>tmaByTurn[dom])dom='B';
+    if(tmaByTurn.C>tmaByTurn[dom])dom='C';
+    const domRows=cons.filter(r=>r.ta===dom);
+    const other=cons.filter(r=>r.ta!==dom);
+    const peso=cons.length?Math.round(100*domRows.length/cons.length):0;
+    chart.__horaTurno={
+      turno:dom,
+      max:tmaByTurn[dom]||0,
+      imp:(tmaM-(meanKey(other,'tma')||0)),
+      peso:peso,
+      nDom:domRows.length,
+      nGeral:cons.length,
+      geral:tmaM,
+      sem:meanKey(other,'tma'),
+      hours:HOUR_LAB.map((h)=>turnOfHour(parseInt(h,10))===dom).map((on,i)=>on?i:-1).filter(i=>i>=0)
+    };
+  }
 }
 
 function buildT3Turno(base,turno,id){
@@ -1842,11 +2025,14 @@ function buildT3Turno(base,turno,id){
   const tmdD=keys.map(k=>meanKey(cons.filter(r=>dk(r)===k),'tmd'));
   const tmeD=keys.map(k=>meanKey(cons.filter(r=>dk(r)===k),'tme'));
   const tmaM=meanKey(cons,'tma'),tmpM=meanKey(cons,'tmp'),tmdM=meanKey(cons,'tmd'),tmeM=meanKey(cons,'tme');
-  barWithMeans(id,labels,[
+  const chart=barWithMeans(id,labels,[
     {label:'TMP',backgroundColor:BLUE[0],data:tmpD},
     {label:'TMD',backgroundColor:ORANGE[0],data:tmdD},
     {label:'TME',backgroundColor:GREEN[0],data:tmeD},
     {label:'TMA',type:'line',data:labels.map(()=>null),borderColor:'#d1242f',borderDash:[6,4],borderWidth:2,pointRadius:0,fill:false,order:99},
+    {label:'/ Entrada A',backgroundColor:'#2da44e',data:labels.map(()=>null),stack:'_ent',order:98,borderWidth:0},
+    {label:'/ Entrada B',backgroundColor:'#e3a008',data:labels.map(()=>null),stack:'_ent',order:98,borderWidth:0},
+    {label:'/ Entrada C',backgroundColor:'#8b5cf6',data:labels.map(()=>null),stack:'_ent',order:98,borderWidth:0},
   ],{stacked:true,redLabel:true,meanLines:[
     {value:tmaM,color:'#d1242f'},
     {value:tmpM,color:BLUE[0]},
@@ -1854,6 +2040,14 @@ function buildT3Turno(base,turno,id){
     {value:tmeM,color:GREEN[0]},
   ]},
     i=>[cons.filter(r=>dk(r)===keys[i])]);
+  if(chart){
+    chart.__entradaComp=keys.map(k=>{
+      const day=cons.filter(r=>dk(r)===k);
+      const n=day.length||1;
+      const pct=t=>Math.round(100*day.filter(r=>r.ta===t).length/n);
+      return {A:pct('A'),B:pct('B'),C:pct('C')};
+    });
+  }
 }
 
 function buildT2(base){
@@ -2222,6 +2416,12 @@ function openModal(id,title){
     cfg.options.plugins.datalabels=cfg.options.plugins.datalabels||{};
   }
   modalChart=new Chart(box, cfg);
+  const srcChart=charts[id];
+  if(srcChart){
+    if(srcChart.__entradaComp) modalChart.__entradaComp=srcChart.__entradaComp;
+    if(srcChart.__horaTurno) modalChart.__horaTurno=srcChart.__horaTurno;
+    if(srcChart.__totSingle) modalChart.__totSingle=true;
+  }
   box.onclick=ev=>handleChartClick(id, modalChart, ev);
   document.getElementById('modal').style.display='flex';
   setTimeout(()=>{modalOrig=captureOrig();},80);
