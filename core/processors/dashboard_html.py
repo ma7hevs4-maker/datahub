@@ -228,8 +228,16 @@ def gerar_dashboard_html(df, saida=None, log_fn=print):
         if hora_s not in horas:
             hora_s = ""
 
-        turno_a = _norm(val(c_turno))
-        turno_s = _norm(val(c_turno_s))
+        def _band_turno(h):
+            try:
+                x=int(str(h).split(":")[0])
+            except (TypeError, ValueError, AttributeError):
+                return ""
+            if x<8: return "A"
+            if x<16: return "B"
+            return "C"
+        turno_a = _band_turno(hora_e) or _norm(val(c_turno))
+        turno_s = _band_turno(hora_s) or _norm(val(c_turno_s))
         cluster = _norm(val(c_cluster))
         rein_tipo = _norm(val(c_rein_tipo))
         causa = _norm(val(c_causa))
@@ -441,6 +449,7 @@ table.top tbody tr:hover{background:var(--acc2)}
 .btn{border:1px solid var(--border);border-radius:6px;padding:6px 12px;font-size:12px;font-weight:600;cursor:pointer;background:var(--card2);color:var(--txt)}
 .btn:hover{background:var(--acc2);color:var(--acc);border-color:var(--acc)}
 .modal{display:none;position:fixed;inset:0;z-index:1000;background:rgba(15,25,40,.6);padding:12px;align-items:center;justify-content:center}
+#drill-modal{z-index:2000}
 .modal-box{background:#fff;border-radius:12px;box-shadow:0 12px 40px rgba(0,0,0,.35);width:100%;max-width:1400px;height:96vh;display:flex;flex-direction:column;overflow:hidden}
 .modal-head{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 16px;background:var(--head);color:#fff}
 .modal-head h3{margin:0;font-size:15px;color:#fff;padding:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -497,8 +506,9 @@ table.dt tr.team-row td:nth-child(1){font-weight:600}
   <div class="segbar" id="segbar1">
     <button class="segbtn" data-seg="e1"><span class="dot" style="background:#1f6feb"></span>Entrada</button>
     <button class="segbtn" data-seg="s1"><span class="dot" style="background:#f0820f"></span>Saída</button>
-    <button class="segbtn" data-seg="m1"><span class="dot" style="background:#5f6b7a"></span>Entrada &amp; Saída</button>
-    <button class="segbtn" data-seg="o1"><span class="dot" style="background:#1a7f37"></span>Em Aberto</button>
+  <button class="segbtn" data-seg="m1"><span class="dot" style="background:#5f6b7a"></span>Entrada &amp; Saída</button>
+  <button class="segbtn" data-seg="bk1"><span class="dot" style="background:#466067"></span>Backlog</button>
+  <button class="segbtn" data-seg="o1"><span class="dot" style="background:#1a7f37"></span>Em Aberto</button>
       <button class="segbtn" data-seg="x1"><span class="dot" style="background:#d1242f"></span>+24h</button>
       <button class="segbtn" data-seg="xO"><span class="dot" style="background:#0969da"></span>OSM</button>
       <button class="segbtn" data-seg="x2"><span class="dot" style="background:#8250df"></span>Ordem 2</button>
@@ -539,7 +549,16 @@ table.dt tr.team-row td:nth-child(1){font-weight:600}
     <div class="grid">
       <div class="card"><h3>Entrada × Saída por Turno</h3><canvas id="m1-1"></canvas></div>
       <div class="card"><h3>Entrada × Saída por Hora</h3><canvas id="m1-2"></canvas></div>
-      <div class="card"><h3>Entrada × Saída por Hora — Clientes (Clts Atual)</h3><canvas id="m1-3"></canvas></div>
+      <div class="card"><h3>Entrada × Saída por Hora — Clientes</h3><canvas id="m1-3"></canvas></div>
+    </div>
+  </section>
+
+  <section class="segblock" id="seg-bk1">
+      <div class="seghead"><span class="dot" style="background:#466067"></span>Backlog<span class="block-hint">clique nas barras/KPIs/Top 10 para detalhar</span></div>
+    <div class="filters" id="f-bk1"></div>
+    <div class="grid">
+      <div class="card"><h3>Backlog (dia anterior × dia atual) — em aberto por hora</h3><canvas id="cb1-1"></canvas></div>
+      <div class="card"><h3>Backlog por Hora (em aberto ao final da hora)</h3><canvas id="b1-1"></canvas></div>
     </div>
   </section>
 
@@ -666,8 +685,9 @@ table.dt tr.team-row td:nth-child(1){font-weight:600}
     <div class="segbar" id="segbar3">
       <button class="segbtn" data-seg="e3"><span class="dot" style="background:#1f6feb"></span>Entrada</button>
       <button class="segbtn" data-seg="s3"><span class="dot" style="background:#f0820f"></span>Saída</button>
-      <button class="segbtn" data-seg="m3"><span class="dot" style="background:#5f6b7a"></span>Entrada &amp; Saída</button>
-      <button class="segbtn" data-seg="t3"><span class="dot" style="background:#b08a00"></span>TMA</button>
+  <button class="segbtn" data-seg="m3"><span class="dot" style="background:#5f6b7a"></span>Entrada &amp; Saída</button>
+  <button class="segbtn" data-seg="bk3"><span class="dot" style="background:#466067"></span>Backlog</button>
+  <button class="segbtn" data-seg="t3"><span class="dot" style="background:#b08a00"></span>TMA</button>
       <button class="segbtn" data-seg="o3"><span class="dot" style="background:#1a7f37"></span>Reincidentes</button>
       <button class="segbtn" data-seg="o4"><span class="dot" style="background:#db2777"></span>Improdutivo</button>
       <button class="segbtn" data-seg="x31"><span class="dot" style="background:#d1242f"></span>+24h</button>
@@ -709,7 +729,16 @@ table.dt tr.team-row td:nth-child(1){font-weight:600}
       <div class="grid">
         <div class="card"><h3>Entrada × Saída por Dia</h3><canvas id="d3-m1-1"></canvas></div>
         <div class="card"><h3>Entrada × Saída por Dia (c/ Saída Equipe)</h3><canvas id="d3-m1-2"></canvas></div>
-        <div class="card"><h3>Entrada × Saída por Dia — Cli Af 3 min (saída = fechados)</h3><canvas id="d3-m1-3"></canvas></div>
+        <div class="card"><h3>Entrada × Saída por Dia (saída = fechados)</h3><canvas id="d3-m1-3"></canvas></div>
+      </div>
+    </section>
+
+    <section class="segblock" id="seg-bk3">
+    <div class="seghead"><span class="dot" style="background:#466067"></span>Backlog<span class="block-hint">clique nas barras/KPIs/Top 10 para detalhar</span></div>
+      <div class="filters" id="f-bk3"></div>
+      <div class="grid">
+        <div class="card"><h3>Backlog (carreamento dia a dia) — em aberto no fim do dia</h3><canvas id="d3-m1-4"></canvas></div>
+        <div class="card"><h3>Backlog (carreamento) por Hora — média do período</h3><canvas id="d3-m1-5"></canvas></div>
       </div>
     </section>
 
@@ -717,13 +746,13 @@ table.dt tr.team-row td:nth-child(1){font-weight:600}
       <div class="seghead"><span class="dot" style="background:#b08a00"></span>TMA<span class="block-hint">clique nas barras para detalhar</span></div>
       <div class="filters" id="f-t3"></div>
       <div class="grid g-tma">
-        <div class="card span-all"><h3>Tempos Médios (TMA / TMP / TMD / TME) — Considerar, por Dia (Geral)</h3><canvas id="d3-t3-1"></canvas></div>
-        <div class="card span-all"><h3>Incidentes Considerar por Tipo — BT / MT / 5RO = S / OSM = SIM</h3><canvas id="d3-t3-5"></canvas></div>
-        <div class="card"><h3>Tempos Médios — Considerar, por Dia — Turno A</h3><canvas id="d3-t3-2"></canvas></div>
-        <div class="card"><h3>Tempos Médios — Considerar, por Dia — Turno B</h3><canvas id="d3-t3-3"></canvas></div>
-        <div class="card"><h3>Tempos Médios — Considerar, por Dia — Turno C</h3><canvas id="d3-t3-4"></canvas></div>
-        <div class="card span-all"><h3>Tempos Médios — Considerar, por Hora de Saída (fechados) + Entrada A/B/C do turno de abertura</h3><canvas id="d3-t3-7"></canvas></div>
-        <div class="card span-all"><h3>Tempos Médios por Hora — Considerar + Total Fechados</h3><canvas id="d3-t3-6"></canvas></div>
+        <div class="card span-all"><h3>Tempos Médios (TMA / TMP / TMD / TME)</h3><canvas id="d3-t3-1"></canvas></div>
+        <div class="card span-all"><h3>Tempos Médios (TMA / TMP / TMD / TME) por Tipo</h3><canvas id="d3-t3-5"></canvas></div>
+        <div class="card"><h3>Tempos Médios - Turno A (com régua de origem)</h3><canvas id="d3-t3-2"></canvas></div>
+        <div class="card"><h3>Tempos Médios - Turno B (com régua de origem)</h3><canvas id="d3-t3-3"></canvas></div>
+        <div class="card"><h3>Tempos Médios - Turno C (com régua de origem)</h3><canvas id="d3-t3-4"></canvas></div>
+        <div class="card span-all"><h3>Tempos Médios por hora de saída (com régua de origem)</h3><canvas id="d3-t3-7"></canvas></div>
+        <div class="card span-all"><h3>Tempos Médios por Hora de entrada</h3><canvas id="d3-t3-6"></canvas></div>
       </div>
     </section>
 
@@ -1047,8 +1076,14 @@ table.dt tr.team-row td:nth-child(1){font-weight:600}
 
 <script>
 Chart.register(ChartDataLabels);
-const DATA=__DADOS__;
+  const DATA=__DADOS__;
 const RAW=DATA.m;
+RAW.forEach(r=>{
+  const bandH=h=>{const x=parseInt(h,10); if(!Number.isFinite(x)) return null; return x<8?'A':(x<16?'B':'C');};
+  const ta=bandH(r.he), ts=bandH(r.hs);
+  if(ta) r.ta=ta;
+  if(ts) r.ts=ts;
+});
 const FULL=DATA.f;
 const FULL_COLS=DATA.c;
 const IDXOF=new Map(RAW.map((r,i)=>[r,i]));
@@ -1129,15 +1164,15 @@ function metaDias(){
 
 // ---- navegação ----
 let tab='d1';
-const BUILD_AT='__BUILD_AT__';
+  const BUILD_AT='__BUILD_AT__';
 
 // ---- filtros universais (UT, Polo, NT) ----
 const UF={d1:{},d2:{}};
 function passes(r,F){
   if(F.p&&!F.p.all&&!F.p.sel.has(r.p)) return false;
   if(F.suc&&!F.suc.all&&!F.suc.sel.has(r.suc)) return false;
-  if(F.e&&!F.e.all&&!F.e.sel.has(r.e)) return false;
-  if(F.sd&&!F.sd.all&&!F.sd.sel.has(r.sd)) return false;
+  if(F.e&&!F.e.all&&!F.e.sel.has(entKey(r))) return false;
+  if(F.sd&&!F.sd.all&&!F.sd.sel.has(saiKey(r))) return false;
   if(F.ta&&!F.ta.all&&!F.ta.sel.has(r.ta)) return false;
   if(F.ts&&!F.ts.all&&!F.ts.sel.has(r.ts)) return false;
   if(F.nt&&!F.nt.all&&!F.nt.sel.has(r.nt)) return false;
@@ -1255,23 +1290,36 @@ function onTopChange(t){
 }
 
 // ---- filtros por segmento ----
+function entKey(r){const d=parseInt(r.d,10),m=parseInt(r.mes,10);return (Number.isFinite(d)&&Number.isFinite(m))?(d+'/'+m):'';}
+function saiKey(r){const d=parseFloat(r.d_sd),m=parseFloat(r.mes_sd);return (Number.isFinite(d)&&Number.isFinite(m))?(Math.trunc(d)+'/'+Math.trunc(m)):'';}
+function dateVal(s){const p=String(s).split('/');return (+p[1])*100+(+p[0]);}
+function prevDayKey(s){const p=String(s).split('/');const dt=new Date(2025,(+p[1])-1,+p[0]);dt.setDate(dt.getDate()-1);return dt.getDate()+'/'+(dt.getMonth()+1);}
+function lastHourOfDate(base,dk){let mx=-1;base.filter(r=>entKey(r)===dk).forEach(r=>{[r.he,r.hs].forEach(v=>{const n=parseInt(v,10);if(Number.isFinite(n)&&n>mx)mx=n;});});return mx<0?23:mx;}
+const DATE_POOL_E=[...new Set(RAW.map(entKey))].filter(v=>v).sort((a,b)=>dateVal(b)-dateVal(a));
+const DATE_POOL_S=[...new Set(RAW.map(saiKey))].filter(v=>v).sort((a,b)=>dateVal(b)-dateVal(a));
+const DATE_POOL=[...new Set([...DATE_POOL_E,...DATE_POOL_S])].sort((a,b)=>dateVal(b)-dateVal(a));
+function mostEnt(){return DATE_POOL_E[0]||'';}
+function mostSai(){return DATE_POOL_S[0]||'';}
+function mostDay(){return DATE_POOL[0]||'';}
 const SUB_CONF={
-  e1:{keys:[['e','Entrada','e',ents()],['sd','Saída','sd',sds()],['ta','Turno Entrada','ta',TURN],['ts','Turno Saída','ts',TURN]],defs:{e:['Hoje']}},
-  s1:{keys:[['e','Entrada','e',ents()],['sd','Saída','sd',sds()],['ta','Turno Entrada','ta',TURN],['ts','Turno Saída','ts',TURN]],defs:{sd:['Hoje']}},
-  m1:{keys:[['dia','Dia','dia',['Hoje','Ontem']]],defs:{dia:['Hoje']}},
+  e1:{keys:[['e','Dia Entrada','e',DATE_POOL_E],['sd','Dia Saída','sd',DATE_POOL_S],['ta','Turno Entrada','ta',TURN],['ts','Turno Saída','ts',TURN]],defs:{e:[mostEnt()]}},
+  s1:{keys:[['e','Dia Entrada','e',DATE_POOL_E],['sd','Dia Saída','sd',DATE_POOL_S],['ta','Turno Entrada','ta',TURN],['ts','Turno Saída','ts',TURN]],defs:{sd:[mostSai()]}},
+  m1:{keys:[['dia','Dia','dia',DATE_POOL]],defs:{dia:[mostDay()]}},
+  bk1:{keys:[['dia','Dia','dia',DATE_POOL]],defs:{dia:[mostDay()]}},
   o1:{keys:[],defs:{}},
   x1:{keys:[],defs:{}},
-  xO:{keys:[['dia','Dia','dia',['Hoje','Ontem']]],defs:{dia:['Hoje']}},
+  xO:{keys:[['dia','Dia','dia',DATE_POOL]],defs:{dia:[mostDay()]}},
   x2:{keys:[],defs:{}},
   x3:{keys:[],defs:{}},
-  e2:{keys:[['e','Entrada','e',ents()],['sd','Saída','sd',sds()],['ta','Turno Entrada','ta',TURN],['ts','Turno Saída','ts',TURN]],defs:{e:['Hoje']}},
-  s2:{keys:[['e','Entrada','e',ents()],['sd','Saída','sd',sds()],['ta','Turno Entrada','ta',TURN],['ts','Turno Saída','ts',TURN]],defs:{sd:['Hoje']}},
-  o2:{keys:[['e','Entrada','e',ents()]],defs:{}},
-  t2:{keys:[['e','Entrada','e',ents()],['sd','Saída','sd',sds()],['ta','Turno Entrada','ta',TURN],['ts','Turno Fechamento','ts',TURN]],defs:{}},
-  p2:{keys:[['e','Entrada','e',ents()],['sd','Saída','sd',sds()],['ta','Turno Entrada','ta',TURN],['ts','Turno Fechamento','ts',TURN]],defs:{}},
+  e2:{keys:[['e','Dia Entrada','e',DATE_POOL_E],['sd','Dia Saída','sd',DATE_POOL_S],['ta','Turno Entrada','ta',TURN],['ts','Turno Saída','ts',TURN]],defs:{e:[mostEnt()]}},
+  s2:{keys:[['e','Dia Entrada','e',DATE_POOL_E],['sd','Dia Saída','sd',DATE_POOL_S],['ta','Turno Entrada','ta',TURN],['ts','Turno Saída','ts',TURN]],defs:{sd:[mostSai()]}},
+  o2:{keys:[['e','Dia Entrada','e',DATE_POOL_E]],defs:{}},
+  t2:{keys:[['e','Dia Entrada','e',DATE_POOL_E],['sd','Dia Saída','sd',DATE_POOL_S],['ta','Turno Entrada','ta',TURN],['ts','Turno Fechamento','ts',TURN]],defs:{}},
+  p2:{keys:[['e','Dia Entrada','e',DATE_POOL_E],['sd','Dia Saída','sd',DATE_POOL_S],['ta','Turno Entrada','ta',TURN],['ts','Turno Fechamento','ts',TURN]],defs:{}},
   e3:{keys:[],defs:{}},
   s3:{keys:[['ta','Turno Entrada','ta',TURN],['ts','Turno Saída','ts',TURN]],defs:{}},
   m3:{keys:[],defs:{}},
+  bk3:{keys:[],defs:{}},
   t3:{keys:[],defs:{}},
   o3:{keys:[['ta','Turno Entrada','ta',TURN],['ts','Turno Saída','ts',TURN]],defs:{}},
   o4:{keys:[['ta','Turno Entrada','ta',TURN],['ts','Turno Saída','ts',TURN]],defs:{}},
@@ -1325,16 +1373,59 @@ function mk(id, cfg){
   cfg.options = cfg.options||{};
   cfg.options.maintainAspectRatio=false;
   cfg.options.plugins = cfg.options.plugins||{};
-  cfg.options.plugins.legend = cfg.options.plugins.legend||{position:'bottom',labels:{boxWidth:12,font:{size:11},color:'#5b6b7b'}};
-  cfg.options.plugins.tooltip = {callbacks:{label:c=>{const v=c.parsed.y??c.parsed.x??c.parsed;return ' '+v;}}};
+  cfg.options.plugins.legend = Object.assign({position:'bottom',labels:{boxWidth:12,font:{size:11},color:'#5b6b7b'}}, cfg.options.plugins.legend||{});
+  cfg.options.plugins.legend.onClick=function(e,item,legend){ if(item.datasetIndex==null) return; const ci=legend.chart; ci.setDatasetVisibility(item.datasetIndex, !ci.isDatasetVisible(item.datasetIndex)); ci.update(); };
+  cfg.options.plugins.legend.labels.generateLabels=function(chart){
+    const ds=chart.data.datasets||[];
+    const idx=ds.findIndex(d=>d.label&&d.label.indexOf('Entrada A / Entrada B / Entrada C')===0);
+    const out=[];
+    ds.forEach((d,i)=>{
+      if(i===idx) return;
+      const isLine=d.type==='line';
+      const col=isLine?(d.borderColor||'#888'):(Array.isArray(d.backgroundColor)?d.backgroundColor[0]:(d.backgroundColor||'#888'));
+      out.push({text:d.label||('Dataset '+(i+1)),fillStyle:col,strokeStyle:d.borderColor||col,lineWidth:isLine?2:1,datasetIndex:i,hidden:!chart.isDatasetVisible(i)});
+    });
+    if(idx>=0) ['A','B','C'].forEach(t=>out.push({text:'Turno '+t,fillStyle:ENTRADA_COLORS[t],strokeStyle:ENTRADA_COLORS[t],lineWidth:1,datasetIndex:idx,hidden:!chart.isDatasetVisible(idx)}));
+    const note=chart.options.plugins.legend.__note;
+    if(note) out.push({text:note,fillStyle:'transparent',strokeStyle:'transparent',lineWidth:0,datasetIndex:null});
+    return out;
+  };
+  cfg.options.plugins.tooltip = {callbacks:{label:c=>{const v=c.parsed.y??c.parsed.x??c.parsed;return ' '+Number(v).toLocaleString('pt-BR',{maximumFractionDigits:1});}}};
   cfg.options.layout = cfg.options.layout||{};
   cfg.options.layout.padding = Object.assign({top:26,right:40}, cfg.options.layout.padding||{});
   const el=document.getElementById(id);
   el.style.height='290px';
   el.onclick=ev=>handleChartClick(id, charts[id], ev);
+  el.onmousemove=ev=>handleChartHover(id, charts[id], ev);
+  el.onmouseleave=()=>{ const t=document.getElementById('ov-tip'); if(t) t.style.display='none'; if(el) el.style.cursor='default'; };
   lastCfg[id]=cloneCfg(cfg);
   charts[id]=new Chart(el, cfg);
   return charts[id];
+}
+function ensureOvTip(){
+  let t=document.getElementById('ov-tip');
+  if(!t){ t=document.createElement('div'); t.id='ov-tip'; document.body.appendChild(t); }
+  t.style.position='fixed'; t.style.zIndex='9999'; t.style.pointerEvents='none';
+  t.style.background='rgba(31,45,61,.96)'; t.style.color='#fff';
+  t.style.padding='4px 8px'; t.style.borderRadius='6px'; t.style.fontSize='11px';
+  t.style.fontFamily='"Segoe UI",Arial'; t.style.boxShadow='0 2px 8px rgba(0,0,0,.25)';
+  t.style.display='none';
+  return t;
+}
+function handleChartHover(id, chart, ev){
+  if(!chart) return;
+  const t=ensureOvTip();
+  const cnv=chart.canvas;
+  const rect=cnv.getBoundingClientRect();
+  const x=(ev.clientX-rect.left);
+  const y=(ev.clientY-rect.top);
+  let tip='';
+  if(chart.__countRects&&chart.__countRects.length){
+    const hit=chart.__countRects.find(b=>x>=b.x1&&x<=b.x2&&y>=b.y1&&y<=b.y2);
+    if(hit){ tip=hit.tip||''; const label=(chart.data.labels||[])[hit.i]; if(label!=null) tip+=' · '+label; }
+  }
+  if(tip){ t.textContent=tip; t.style.display='block'; t.style.left=(ev.clientX+12)+'px'; t.style.top=(ev.clientY+12)+'px'; cnv.style.cursor='pointer'; }
+  else { t.style.display='none'; cnv.style.cursor='default'; }
 }
 function cloneCfg(cfg){
   return {
@@ -1383,6 +1474,8 @@ const totalsPlugin={id:'totals',afterDatasetsDraw(chart,args,opts){
   if(!meta||!meta.data||!meta.data.length) return;
   const ctx=chart.ctx;
   const ds=chart.data.datasets;
+  const tmaIdx=ds.findIndex(d=>d.label==='TMA');
+  const tmaVisible=tmaIdx<0||chart.isDatasetVisible(tmaIdx);
 const n=Math.min(labels.length,meta.data.length);
   chart.__totRects=[];
   ctx.save();
@@ -1396,7 +1489,7 @@ const n=Math.min(labels.length,meta.data.length);
       if(d.type==='line'||d.order===99) continue;
       const v=Number(d.data[i])||0;tot+=v;if(v>maxV)maxV=v;}
     if(tot<=0) continue;
-    const txt=tot>=1000?String(Math.round(tot/100)/10)+'k':String(tot);
+    const txt=tot>=1000?String(Math.round(tot/100)/10)+'k':(Number.isInteger(tot)?String(tot):tot.toFixed(1));
     const tw=ctx.measureText(txt).width;
     const px=isH?val.getPixelForValue(tot):cat.getPixelForValue(labels[i]);
     const anchorV=isStacked?tot:maxV;
@@ -1407,7 +1500,8 @@ const n=Math.min(labels.length,meta.data.length);
   const ok=(x1,y1,x2,y2)=>{for(const p of placed){if(x1<p.x2&&x2>p.x1&&y1<p.y2&&y2>p.y1)return false;}return true;};
   const top=chart.chartArea?chart.chartArea.top+4:0;
   for(const it of items){
-    const tl=opts&&opts.redLabel;
+    const tl=(opts&&opts.redLabel)&&tmaVisible;
+    if((opts&&opts.redLabel)&&!tmaVisible) continue;
     const bh=16,step=18;
     let cy=(isH?it.py:it.py-15);
     let x1=it.px-it.tw/2-3,y1=cy-bh/2,x2=it.px+it.tw/2+3,y2=cy+bh/2;
@@ -1434,64 +1528,114 @@ const meanLinesPlugin={id:'meanLines',afterDatasetsDraw(chart){
   if(!cfg||!cfg.lines||!cfg.lines.length) return;
   const {ctx,chartArea:{left,right},scales:{y}}=chart;
   ctx.save();ctx.font='700 10px "Segoe UI",Arial';ctx.textBaseline='middle';ctx.textAlign='left';
-  cfg.lines.forEach(ml=>{
+  const visibleLines=cfg.lines.filter(ml=>{
     const v=ml.value;
-    if(v==null||!isFinite(v)) return;
+    if(v==null||!isFinite(v)) return false;
+    const color=ml.color||'#d1242f';
+    return (chart.data.datasets||[]).some((d,i)=>chart.isDatasetVisible(i)&&(d.borderColor===color||d.backgroundColor===color));
+  });
+  visibleLines.forEach((ml,idx)=>{
+    const v=ml.value;
+    const color=ml.color||'#d1242f';
     const yp=y.getPixelForValue(v);
     if(yp<chart.chartArea.top-1||yp>chart.chartArea.bottom+1) return;
-    ctx.beginPath();ctx.setLineDash([6,4]);ctx.lineWidth=1.5;ctx.strokeStyle=ml.color||'#d1242f';
-    ctx.moveTo(left,yp);ctx.lineTo(right,yp);ctx.stroke();
-    const txt='Média: '+Number(v).toLocaleString('pt-BR',{maximumFractionDigits:1});
+    if(!ml.noLine){
+      ctx.beginPath();ctx.setLineDash([6,4]);ctx.lineWidth=1.5;ctx.strokeStyle=color;
+      ctx.moveTo(left,yp);ctx.lineTo(right,yp);ctx.stroke();
+    }
+    let label;
+    if(ml.label) label=ml.label+' : ';
+    else { const dm=(chart.data.datasets||[]).find(d=>d.borderColor===color||d.backgroundColor===color); label=(dm&&dm.label?dm.label:'Média')+': '; }
+    const txt=label+Number(v).toLocaleString('pt-BR',{maximumFractionDigits:1});
     const tw=ctx.measureText(txt).width;
-    ctx.setLineDash([]);ctx.fillStyle='rgba(255,255,255,.9)';ctx.fillRect(right-tw-7,yp-8,tw+6,16);
-    ctx.fillStyle='#1f2d3d';ctx.fillText(txt,right-tw-4,yp);
+    const yLabel=yp-idx*18-8;
+    ctx.setLineDash([]);ctx.fillStyle='rgba(255,255,255,.9)';ctx.fillRect(right-tw-7,yLabel-8,tw+6,16);
+    ctx.fillStyle='#1f2d3d';ctx.fillText(txt,right-tw-4,yLabel);
   });
   ctx.restore();
 }};
 Chart.register(meanLinesPlugin);
 const countOverlayPlugin={id:'countOverlay',afterDatasetsDraw(chart){
-  const ds=(chart.data.datasets||[]).find(d=>d.__countOverlay);
-  if(!ds) return;
+  const datasets=(chart.data.datasets||[]).filter(d=>d.__countOverlay);
+  if(!datasets.length) return;
   const y1=chart.scales&&chart.scales.y1;
   if(!y1) return;
   const {ctx,chartArea:ca}=chart;
   const x=chart.scales.x;
-  const pts=ds.data.map((v,i)=>v!=null&&isFinite(v)?{i:i,x:x.getPixelForValue(i),y:y1.getPixelForValue(v),v:v}:null);
   ctx.save();
-  ctx.lineWidth=2;ctx.strokeStyle=ds.borderColor||'#8e44ad';
-  ctx.beginPath();
-  let started=false;
-  for(const p of pts){ if(!p||p.v<=0) continue;
-    if(!started){ctx.moveTo(p.x,p.y);started=true;}else ctx.lineTo(p.x,p.y);
-  }
-  if(started) ctx.stroke();
-  ctx.fillStyle=ds.borderColor||'#8e44ad';
-  const rects=[];
-  ctx.font='700 11px "Segoe UI",Arial';ctx.textBaseline='middle';ctx.textAlign='center';
-  for(const p of pts){ if(!p||p.v<=0) continue;
-    ctx.beginPath();ctx.arc(p.x,p.y,3,0,Math.PI*2);ctx.fill();
-    const txt=Number(p.v).toLocaleString('pt-BR');
-    const tw=ctx.measureText(txt).width;
-    const w=Math.min(tw+8,90),h=15;
-    let bx=p.x-w/2,by=p.y-h/2-2;
-    if(by<ca.top+2) by=ca.top+2;
-    if(by+h>ca.bottom-2) by=ca.bottom-2-h;
-    ctx.fillRect(bx,by,w,h);
-    ctx.fillStyle='#ffffff';ctx.fillText(txt,p.x,by+h/2);ctx.fillStyle=ds.borderColor||'#8e44ad';
-    rects.push({x1:bx,y1:by,x2:bx+w,y2:by+h,i:p.i});
-  }
-  chart.__countRects=rects;
+  chart.__countRects=[];
+  const hourTop={};
+  datasets.forEach(ds=>{
+    const di=(chart.data.datasets||[]).indexOf(ds);
+    if(chart.isDatasetVisible&&!chart.isDatasetVisible(di)) return;
+    const isTeams=ds.label&&ds.label.indexOf('equipes')>=0;
+    const metric=ds.label==='Média saída'?'saida':ds.label==='Média entrada'?'entrada':isTeams?'equipes':'producao';
+    if(ds.noLine){
+      // rótulos posicionados ACIMA do rótulo vermelho (total) no topo de cada barra, independente da escala
+      const tr=chart.__totRects||[];
+      ctx.font='700 10px "Segoe UI",Arial';ctx.textBaseline='middle';ctx.textAlign='center';
+      ds.data.forEach((v,i)=>{
+        if(v==null||!isFinite(v)||v<=0) return;
+        const rect=tr.find(r=>r.i===i);
+        if(!rect) return;
+        const topY=(hourTop[i]!==undefined)?hourTop[i]:(rect.y1-2);
+        const txt=Number(v).toLocaleString('pt-BR',{maximumFractionDigits:1});
+        const tw=ctx.measureText(txt).width;
+        const w=Math.min(tw+8,90),h=14;
+        let by=topY-h;
+        if(by<ca.top+1) by=ca.top+1;
+        const cx=x.getPixelForValue(i);
+        ctx.fillStyle=ds.borderColor||'#5f6b7a';
+        ctx.fillRect(cx-w/2,by,w,h);
+        ctx.fillStyle='#ffffff';ctx.fillText(txt,cx,by+h/2);
+        chart.__countRects.push({x1:cx-w/2,y1:by,x2:cx+w/2,y2:by+h,i:i,metric:metric,tip:(ds.label||'')+': '+txt+(isTeams?' · clique p/ ver equipes':'')});
+        hourTop[i]=by-2;
+      });
+      return;
+    }
+    const pts=ds.data.map((v,i)=>v!=null&&isFinite(v)?{i:i,x:x.getPixelForValue(i),y:y1.getPixelForValue(v),v:v}:null);
+    const drawLine=!ds.noLine;
+    if(drawLine){
+      ctx.lineWidth=2;ctx.strokeStyle=ds.borderColor||'#8e44ad';
+      ctx.beginPath();
+      let started=false;
+      for(const p of pts){ if(!p||p.v<=0) continue;
+        if(!started){ctx.moveTo(p.x,p.y);started=true;}else ctx.lineTo(p.x,p.y);
+      }
+      if(started) ctx.stroke();
+    }
+    ctx.fillStyle=ds.borderColor||'#8e44ad';
+    ctx.font='700 11px "Segoe UI",Arial';ctx.textBaseline='middle';ctx.textAlign='center';
+    for(const p of pts){ if(!p||p.v<=0) continue;
+      ctx.beginPath();ctx.arc(p.x,p.y,3,0,Math.PI*2);ctx.fill();
+      const txt=Number(p.v).toLocaleString('pt-BR',{maximumFractionDigits:1});
+      const tw=ctx.measureText(txt).width;
+      const w=Math.min(tw+8,90),h=15;
+      let bx=p.x-w/2,by=p.y-h/2-2;
+      if(by<ca.top+2) by=ca.top+2;
+      if(by+h>ca.bottom-2) by=ca.bottom-2-h;
+      ctx.fillRect(bx,by,w,h);
+      ctx.fillStyle='#ffffff';ctx.fillText(txt,p.x,by+h/2);ctx.fillStyle=ds.borderColor||'#8e44ad';
+      chart.__countRects.push({x1:bx,y1:by,x2:bx+w,y2:by+h,i:p.i,metric:metric,tip:(ds.label||'')+': '+txt});
+    }
+  });
   ctx.restore();
 }};
 Chart.register(countOverlayPlugin);
 
 // ---- plugin: composição por turno de ENTRADA (régua ao lado da barra do dia) ----
-const ENTRADA_COLORS={A:'#2da44e',B:'#e3a008',C:'#8b5cf6'};
+const ENTRADA_COLORS={A:'#8b5cf6',B:'#fe8da1',C:'#0aa2a2'};
 const ENTRADA_LEGEND=['A','B','C'];
 const ENTRADA_DRAW=['C','B','A']; // desenha de baixo p/ cima; A fica no topo
 const entradaCompPlugin={id:'entradaComp',beforeDatasetsDraw(chart){
   const comp=chart.__entradaComp;
   if(!comp) return;
+  const hasVisibleEntrada=(chart.data.datasets||[]).some((d,i)=>{
+    if(!chart.isDatasetVisible(i)) return false;
+    const lbl=d.label||'';
+    return lbl==='Entrada A / Entrada B / Entrada C' || /^\/ Entrada [ABC]$/.test(lbl);
+  });
+  if(!hasVisibleEntrada) return;
   const {ctx,chartArea:ca}=chart;
   const meta=chart.getDatasetMeta(0);
   if(!meta||!meta.data||!meta.data.length) return;
@@ -1553,6 +1697,8 @@ Chart.register(entradaCompPlugin);
 const horaTurnoPlugin={id:'horaTurno',beforeDatasetsDraw(chart){
   const st=chart.__horaTurno;
   if(!st||!st.hours||!st.hours.length) return;
+  const tmaIdx=(chart.data.datasets||[]).findIndex(d=>d.label==='TMA');
+  if(tmaIdx>=0&&!chart.isDatasetVisible(tmaIdx)) return;
   const {ctx,chartArea:ca}=chart;
   const barIdx=[];chart.data.datasets.forEach((d,j)=>{if(!d.type||d.type==='bar')barIdx.push(j);});
   const bars=barIdx.map(j=>chart.getDatasetMeta(j)).filter(m=>m&&m.data&&m.data.length);
@@ -1575,9 +1721,11 @@ const horaTurnoPlugin={id:'horaTurno',beforeDatasetsDraw(chart){
 },afterDatasetsDraw(chart){
   const st=chart.__horaTurno;
   if(!st||!st.hours||!st.hours.length) return;
+  const tmaIdx=(chart.data.datasets||[]).findIndex(d=>d.label==='TMA');
+  if(tmaIdx>=0&&!chart.isDatasetVisible(tmaIdx)) return;
   const {ctx,chartArea:ca}=chart;
   ctx.save();
-  const txt='Turno '+st.turno+' · TMA médio '+Math.round(st.max)+' min · sem o turno: '+Math.round(st.sem)+' min · impacto +'+Math.round(st.imp)+' min (média geral '+Math.round(st.geral)+')';
+  const txt=st.tlabel+' · TMA médio '+Math.round(st.max)+' min · sem o turno: '+Math.round(st.sem)+' min · impacto +'+Math.round(st.imp)+' min (média geral '+Math.round(st.geral)+')';
   ctx.font='700 10px "Segoe UI",Arial';
   const tw=ctx.measureText(txt).width;
   const bw=tw+16;
@@ -1599,6 +1747,7 @@ function roundRectAll(ctx,x,y,w,h,r){
 // ---- renderChart genérico + drill ----
 let drillSets={};
 let overlayDrill={};
+let overlayDrillEq={};
 function storeDrill(id, labels, fn){
   drillSets[id]=[];
   for(let i=0;i<labels.length;i++) drillSets[id][i]=fn(i);
@@ -1613,14 +1762,15 @@ function handleChartClick(id, chart, ev){
   const df=chart.canvas.getAttribute('data-drill-field')||null;
   const cnv=chart.canvas;
   const rect=cnv.getBoundingClientRect();
-  const x=(ev.clientX-rect.left)*(cnv.width/rect.width);
-  const y=(ev.clientY-rect.top)*(cnv.height/rect.height);
+  const x=(ev.clientX-rect.left);
+  const y=(ev.clientY-rect.top);
   if(chart.__countRects&&chart.__countRects.length){
     const hit=chart.__countRects.find(b=>x>=b.x1&&x<=b.x2&&y>=b.y1&&y<=b.y2);
     if(hit){
-      const rows=(overlayDrill[id]&&overlayDrill[id][hit.i])||null;
       const label=(chart.data.labels||[])[hit.i];
-      if(rows&&rows.length) openDrillModal(chartTitle(id)+(label!=null?' — '+label:''), rows, df);
+      const rows=(chart.__countDrill&&chart.__countDrill[hit.metric]&&chart.__countDrill[hit.metric][hit.i])||null;
+      const field=hit.metric==='equipes'?'eqd':df;
+      if(rows&&rows.length) openDrillModal(chartTitle(id)+(label!=null?' — '+label:'')+(hit.metric==='equipes'?' · Equipes':''), rows, field);
       return;
     }
   }
@@ -1772,6 +1922,7 @@ function barWithMeans(id, labels, datasets, opts, drillFn){
     plugins:[]
   };
   storeDrill(cid, labels, drillFn||(()=>[]));
+  if(opts.legendNote) cfg.options.plugins.legend.__note=opts.legendNote;
   const chart=mk(cid, cfg);
   if(chart&&opts.totSingle) charts[cid].__totSingle=true;
   return chart;
@@ -1838,8 +1989,8 @@ function buildS1(base){
   renderChart('s1-3',HOUR_LAB,eK.map((v,i)=>({name:v,color:ORANGE[i%ORANGE.length],rows:h=>fe.filter(r=>r.e===v).filter(r=>parseInt(r.hs,10)===parseInt(h,10))})),{});
   const U=UF[tab]||{};
   const F=FSTATE[CUR_SUB]||{};
-  const C4={ut:U.ut,p:U.p,suc:U.suc,nt:U.nt,gpd:U.gpd,e:F.e,sd:{all:false,sel:new Set(['Aberto'])},ta:mergeF(U.ta,F.ta),ts:mergeF(U.ts,F.ts)};
-  const ab4=RAW.filter(r=>passes(r,C4));
+  const C4={ut:U.ut,p:U.p,suc:U.suc,nt:U.nt,gpd:U.gpd,e:F.e,ta:mergeF(U.ta,F.ta),ts:mergeF(U.ts,F.ts)};
+  const ab4=RAW.filter(r=>r.s==='Aberto'&&passes(r,C4));
   renderChart('s1-4',ENTR_ORD,[
     {name:'Atribuído',color:ORANGE[0],rows:e=>ab4.filter(r=>r.s==='Aberto'&&!isIgnCausa(r)&&r.e===e&&r.atr==='Atribuído')},
     {name:'Não Atribuído',color:ORANGE[1],rows:e=>ab4.filter(r=>r.s==='Aberto'&&!isIgnCausa(r)&&r.e===e&&r.atr==='Não Atribuído')},
@@ -1902,9 +2053,9 @@ function buildS3(base){
 function buildM1(base){
   if(CUR_SUB==='m3') return buildM1_d3(base);
   const F=FSTATE[CUR_SUB]||{};
-  const dias=(F.dia&&!F.dia.all&&F.dia.sel.size)?[...F.dia.sel]:['Hoje'];
-  const ent=base.filter(r=>dias.includes(r.e));
-  const sai=base.filter(r=>r.s==='Fechado'&&dias.includes(r.sd));
+  const dia=(F.dia&&!F.dia.all&&F.dia.sel.size)?[...F.dia.sel]:[mostDay()];
+  const ent=base.filter(r=>dia.includes(entKey(r)));
+  const sai=base.filter(r=>r.s==='Fechado'&&dia.includes(saiKey(r)));
   const saiEq=sai.filter(r=>r.eo==='equipe');
   renderChart('m1-1',TURN,[
     {name:'Entrada',color:'#1f6feb',rows:t=>ent.filter(r=>r.ta===t)},
@@ -1912,14 +2063,95 @@ function buildM1(base){
   ],{});
   renderChart('m1-2',HOUR_LAB,[
     {name:'Entrada',color:'#1f6feb',area:'rgba(31,111,235,.12)',rows:i=>ent.filter(r=>parseInt(r.he,10)===parseInt(i,10))},
-    {name:'Saída',color:'#d1242f',area:'rgba(209,36,47,.12)',rows:i=>sai.filter(r=>parseInt(r.hs,10)===parseInt(i,10))},
+    {name:'Saída',color:'#f0820f',area:'rgba(240,130,15,.12)',rows:i=>sai.filter(r=>parseInt(r.hs,10)===parseInt(i,10))},
     {name:'Saída Equipe',color:'#1a7f37',area:'rgba(26,127,55,.12)',rows:i=>saiEq.filter(r=>parseInt(r.hs,10)===parseInt(i,10))},
   ],{type:'line'});
   renderChart('m1-3',HOUR_LAB,[
-    {name:'Entrada (clientes)',color:'#1f6feb',area:'rgba(31,111,235,.12)',wt:'ct',rows:i=>ent.filter(r=>parseInt(r.he,10)===parseInt(i,10))},
-    {name:'Saída (Cli Af 3 min)',color:'#d1242f',area:'rgba(209,36,47,.12)',wt:'a3',rows:i=>sai.filter(r=>parseInt(r.hs,10)===parseInt(i,10))},
-    {name:'Saída Equipe (Cli Af 3 min)',color:'#1a7f37',area:'rgba(26,127,55,.12)',wt:'a3',rows:i=>saiEq.filter(r=>parseInt(r.hs,10)===parseInt(i,10))},
+    {name:'Entrada',color:'#1f6feb',area:'rgba(31,111,235,.12)',wt:'a3',rows:i=>ent.filter(r=>parseInt(r.he,10)===parseInt(i,10))},
+    {name:'Saída',color:'#f0820f',area:'rgba(240,130,15,.12)',wt:'a3',rows:i=>sai.filter(r=>parseInt(r.hs,10)===parseInt(i,10))},
+    {name:'Saída Equipe',color:'#1a7f37',area:'rgba(26,127,55,.12)',wt:'a3',rows:i=>saiEq.filter(r=>parseInt(r.hs,10)===parseInt(i,10))},
   ],{type:'line'});
+}
+
+function buildBk1(base){
+  buildCarry1(base);
+  buildBacklog1(base);
+}
+
+function lastHourOf(base){
+  const cats=new Set(base.map(r=>r.e));
+  const most=cats.has('Hoje')?'Hoje':(cats.has('Ontem')?'Ontem':'Dias Anteriores');
+  let mx=-1;
+  base.filter(r=>r.e===most).forEach(r=>{
+    [r.he,r.hs].forEach(v=>{const n=parseInt(v,10);if(Number.isFinite(n)&&n>mx)mx=n;});
+  });
+  return mx<0?23:mx;
+}
+
+function buildBacklog1(base){
+  const F=FSTATE[CUR_SUB]||{};
+  const dia=(F.dia&&!F.dia.all&&F.dia.sel.size)?[...F.dia.sel]:[mostDay()];
+  const curK=dia.slice().sort((a,b)=>dateVal(b)-dateVal(a))[0];
+  const ent=base.filter(r=>dia.includes(entKey(r)));
+  const LH=(dia.length===1)?lastHourOfDate(base,curK):23;
+  const openAtEnd=(r,H)=>{
+    const he=parseInt(r.he,10);
+    if(!Number.isFinite(he)||he>H) return false;
+    if(r.s==='Aberto') return true;
+    const sk=saiKey(r);
+    if(!sk) return false;
+    if(dateVal(sk)>dateVal(curK)) return true;
+    if(sk===curK){ const hs=parseInt(r.hs,10); return Number.isFinite(hs)&&hs>H; }
+    return false;
+  };
+  const newH=HOUR_LAB.map((h,i)=>ent.filter(r=>parseInt(r.he,10)===i&&openAtEnd(r,i)).length);
+  const carryH=HOUR_LAB.map((h,i)=>ent.filter(r=>{const he=parseInt(r.he,10);return Number.isFinite(he)&&he<i&&openAtEnd(r,i);}).length);
+  const pctH=HOUR_LAB.map((h,i)=>{
+    if(i===0) return null;
+    const prev=ent.filter(r=>parseInt(r.he,10)===i-1);
+    if(!prev.length) return null;
+    const done=prev.filter(r=>r.s==='Fechado'&&parseInt(r.hs,10)===i).length;
+    return Math.round(100*done/prev.length);
+  });
+  const newC=newH.map((v,i)=>i<=LH?v:0);
+  const carC=carryH.map((v,i)=>i<=LH?v:0);
+  const pctC=pctH.map((v,i)=>i<=LH?v:null);
+  barWithMeans('b1-1',HOUR_LAB,[
+    {label:'Backlog hora atual',backgroundColor:'#466067',data:newC,order:1},
+    {label:'Backlog hora anterior',backgroundColor:'#34baab',data:carC,order:2},
+    {label:'% resolvidos da hora anterior',type:'line',yAxisID:'y1',data:pctC,borderColor:'#a7cd2c',backgroundColor:'#a7cd2c',borderWidth:2,pointRadius:2,fill:false,tension:0.3,order:0,datalabels:{display:true,color:'#000',backgroundColor:'rgba(255,255,255,.9)',borderRadius:3,padding:2,font:{size:9,weight:'700'},formatter:v=>v==null?'':v+'%'}},
+  ],{stacked:true,redLabel:false,meanLines:[]},
+    i=>{if(i>LH)return[[],[],[]];return[ent.filter(r=>parseInt(r.he,10)===i),ent.filter(r=>parseInt(r.he,10)<i),[]];});
+}
+
+function buildCarry1(base){
+  const mean=a=>{const t=a.reduce((x,y)=>x+y,0);return a.length?t/a.length:0;};
+  const F=FSTATE[CUR_SUB]||{};
+  const dia=(F.dia&&!F.dia.all&&F.dia.sel.size)?[...F.dia.sel]:[mostDay()];
+  const curK=dia.slice().sort((a,b)=>dateVal(b)-dateVal(a))[0];
+  const antK=prevDayKey(curK);
+  const LH=(dia.length===1)?lastHourOfDate(base,curK):23;
+  const atual=base.filter(r=>entKey(r)===curK);
+  const ant=base.filter(r=>entKey(r)===antK);
+  const openSai=(r,H)=>{
+    if(r.s==='Aberto') return true;
+    const sk=saiKey(r);
+    if(!sk) return false;
+    if(dateVal(sk)>dateVal(curK)) return true;
+    if(sk===curK){ const hs=parseInt(r.hs,10); return Number.isFinite(hs)&&hs>H; }
+    return false;
+  };
+  const openAtu=(r,H)=>{const he=parseInt(r.he,10);if(!Number.isFinite(he)||he>H)return false;return openSai(r,H);};
+  const openAnt=(r,H)=>openSai(r,H);
+  const antH=HOUR_LAB.map((h,i)=>ant.filter(r=>openAnt(r,i)).length);
+  const atuH=HOUR_LAB.map((h,i)=>atual.filter(r=>openAtu(r,i)).length);
+  const antC=antH.map((v,i)=>i<=LH?v:0);
+  const atuC=atuH.map((v,i)=>i<=LH?v:0);
+  barWithMeans('cb1-1',HOUR_LAB,[
+    {label:'Backlog dia anterior',backgroundColor:'#34baab',data:antC},
+    {label:'Backlog dia atual',backgroundColor:'#466067',data:atuC},
+  ],{stacked:true,redLabel:false,meanLines:[{value:mean(antC),color:'#34baab'},{value:mean(atuC),color:'#466067'}]},
+    i=>{if(i>LH)return[[],[]];return[ant.filter(r=>openAnt(r,i)),atual.filter(r=>openAtu(r,i))];});
 }
 
 // ---- Dashboard 3 - Entrada & Saída (visão de período) ----
@@ -1960,16 +2192,69 @@ function buildM1_d3(base){
   renderChart('m1-2',labels,[
     {name:'Entrada',color:BLUE[0],rows:lab=>ent.filter(r=>dayKeyOfEnt(r)===lab)},
     {name:'Saída',color:ORANGE[0],rows:lab=>sai.filter(r=>dayKeyOfSai(r)===lab)},
-    {name:'Saída Equipe',color:ORANGE[1],rows:lab=>saiEq.filter(r=>dayKeyOfSai(r)===lab)},
-  ],{type:'line',meanLines:[{value:mean(entD),color:BLUE[0]},{value:mean(saiD),color:ORANGE[0]},{value:mean(saiEqD),color:ORANGE[1]}]});
+    {name:'Saída Equipe',color:'#1a7f37',rows:lab=>saiEq.filter(r=>dayKeyOfSai(r)===lab)},
+  ],{type:'line',meanLines:[{value:mean(entD),color:BLUE[0]},{value:mean(saiD),color:ORANGE[0]},{value:mean(saiEqD),color:'#1a7f37'}]});
 
   // m1-3: Entrada x Saída por Dia — Cli Af 3 min (saída = fechados) + médias
   renderChart('m1-3',labels,[
-    {name:'Entrada (Cli Af 3 min)',color:BLUE[0],wt:'a3',rows:lab=>ent.filter(r=>dayKeyOfEnt(r)===lab)},
-    {name:'Saída (Cli Af 3 min)',color:ORANGE[0],wt:'a3',rows:lab=>sai.filter(r=>dayKeyOfSai(r)===lab)},
-    {name:'Saída Equipe (Cli Af 3 min)',color:ORANGE[1],wt:'a3',rows:lab=>saiEq.filter(r=>dayKeyOfSai(r)===lab)},
-  ],{type:'line',meanLines:[{value:mean(entA3),color:BLUE[0]},{value:mean(saiA3),color:ORANGE[0]},{value:mean(saiEqA3),color:ORANGE[1]}]});
+    {name:'Entrada',color:BLUE[0],wt:'a3',rows:lab=>ent.filter(r=>dayKeyOfEnt(r)===lab)},
+    {name:'Saída',color:ORANGE[0],wt:'a3',rows:lab=>sai.filter(r=>dayKeyOfSai(r)===lab)},
+    {name:'Saída Equipe',color:'#1a7f37',wt:'a3',rows:lab=>saiEq.filter(r=>dayKeyOfSai(r)===lab)},
+  ],{type:'line',meanLines:[{value:mean(entA3),color:BLUE[0]},{value:mean(saiA3),color:ORANGE[0]},{value:mean(saiEqA3),color:'#1a7f37'}]});
+
 }
+
+function buildCarryD3(base){
+  const ent=base;
+  const sai=base.filter(r=>r.s==='Fechado');
+  const entGroups={}; ent.forEach(r=>{const k=entKey(r);(entGroups[k]=entGroups[k]||[]).push(r);});
+  const mean=a=>{const t=a.reduce((x,y)=>x+y,0);return a.length?t/a.length:0;};
+  const _ms=r=>{const v=r.mes_sd;return(v!==undefined&&v!==null&&String(v).trim()!=='')?Number(v):Number(r.mes);};
+  const _ds=r=>{const v=r.d_sd;return(v!==undefined&&v!==null&&String(v).trim()!=='')?Number(v):Number(r.d);};
+  const dkEnt=r=>((r.mes!==undefined&&r.mes!==null)?String(r.mes):'?')+'-'+((r.d!==undefined&&r.d!==null)?String(r.d):'?');
+  const dkSai=r=>String(_ms(r))+'-'+String(_ds(r));
+  const _openSai=(r,H,curK)=>{
+    if(r.s==='Aberto') return true;
+    const sk=saiKey(r); if(!sk) return false;
+    if(dateVal(sk)>dateVal(curK)) return true;
+    if(sk===curK){ const hs=parseInt(r.hs,10); return Number.isFinite(hs)&&hs>H; }
+    return false;
+  };
+  const _openAtu=(r,H,curK)=>{const he=parseInt(r.he,10);if(!Number.isFinite(he)||he>H)return false;return _openSai(r,H,curK);};
+  const _openAnt=(r,H,curK)=>_openSai(r,H,curK);
+  const dm={};
+  ent.forEach(r=>{const k=dkEnt(r); if(!dm[k]) dm[k]={mes:Number(r.mes)||0,d:Number(r.d)||0};});
+  sai.forEach(r=>{const k=dkSai(r); const m=_ms(r);const d=_ds(r);if(!dm[k]) dm[k]={mes:m,d:d};});
+  const keys=Object.keys(dm).sort((a,b)=>{const A=dm[a],B=dm[b];return(A.mes-B.mes)||(A.d-B.d);});
+  const labels=keys.map(k=>String(dm[k].d)+'/'+String(dm[k].mes));
+  if(!labels.length) labels.push('—');
+  const perDay={};
+  labels.forEach(k=>{
+    const ant=entGroups[prevDayKey(k)]||[];
+    const atu=entGroups[k]||[];
+    const antH=HOUR_LAB.map((_,h)=>ant.filter(r=>_openAnt(r,h,k)).length);
+    const atuH=HOUR_LAB.map((_,h)=>atu.filter(r=>_openAtu(r,h,k)).length);
+    perDay[k]={antH,atuH};
+  });
+  // m1-4: carreamento por DIA (valor no fim do dia = hora 23)
+  const carryD=labels.map(k=>perDay[k].antH[23]);
+  const openD=labels.map(k=>perDay[k].atuH[23]);
+  barWithMeans('m1-4',labels,[
+    {label:'Backlog dia anterior',backgroundColor:'#34baab',data:carryD},
+    {label:'Backlog dia atual',backgroundColor:'#466067',data:openD},
+  ],{stacked:true,meanLines:[{value:mean(carryD),color:'#34baab'},{value:mean(openD),color:'#466067'}]},
+    i=>[ (entGroups[prevDayKey(labels[i])]||[]).filter(r=>_openAnt(r,23,labels[i])), (entGroups[labels[i]]||[]).filter(r=>_openAtu(r,23,labels[i])) ]);
+  // m1-5: carreamento por HORA — média do período
+  const avgAnt=HOUR_LAB.map((_,h)=>mean(labels.map(k=>perDay[k].antH[h])));
+  const avgAtu=HOUR_LAB.map((_,h)=>mean(labels.map(k=>perDay[k].atuH[h])));
+  barWithMeans('m1-5',HOUR_LAB,[
+    {label:'Backlog dia anterior',backgroundColor:'#34baab',data:avgAnt},
+    {label:'Backlog dia atual',backgroundColor:'#466067',data:avgAtu},
+  ],{stacked:true,meanLines:[{value:mean(avgAnt),color:'#34baab'},{value:mean(avgAtu),color:'#466067'}]},
+    i=>[ [].concat(...labels.map(k=>(entGroups[prevDayKey(k)]||[]).filter(r=>_openAnt(r,i,k)))), [].concat(...labels.map(k=>(entGroups[k]||[]).filter(r=>_openAtu(r,i,k)))) ]);
+}
+
+function buildBk3(base){ buildCarryD3(base); }
 
 // ---- Dashboard 3 - Reincidentes (visão de período) ----
 function buildR3(base){
@@ -2047,9 +2332,9 @@ function buildO1(base){
 function buildXO(base){
   if(CUR_SUB==='xO3') return buildXO_d3(base);
   const F=FSTATE[CUR_SUB]||{};
-  const dias=(F.dia&&!F.dia.all&&F.dia.sel.size)?[...F.dia.sel]:['Hoje'];
-  const ent=base.filter(r=>dias.includes(r.e));
-  const sai=base.filter(r=>r.s==='Fechado'&&dias.includes(r.sd));
+  const dia=(F.dia&&!F.dia.all&&F.dia.sel.size)?[...F.dia.sel]:[mostDay()];
+  const ent=base.filter(r=>dia.includes(entKey(r)));
+  const sai=base.filter(r=>r.s==='Fechado'&&dia.includes(saiKey(r)));
   const osmEnt=ent.filter(r=>String(r.osm).toUpperCase()==='SIM');
   const osmSai=sai.filter(r=>String(r.osm).toUpperCase()==='SIM');
   renderChart('xO-1',HOUR_LAB,[
@@ -2240,10 +2525,10 @@ function buildT3(base){
     {label:'TME',backgroundColor:GREEN[0],data:tmeD},
     {label:'TMA',type:'line',data:labels.map(()=>null),borderColor:'#d1242f',borderDash:[6,4],borderWidth:2,pointRadius:0,fill:false,order:99},
   ],{stacked:true,redLabel:true,meanLines:[
-    {value:tmaM,color:'#d1242f'},
-    {value:tmpM,color:BLUE[0]},
-    {value:tmdM,color:ORANGE[0]},
-    {value:tmeM,color:GREEN[0]},
+    {value:tmaM,color:'#d1242f',label:'TMA'},
+    {value:tmpM,color:BLUE[0],label:'TMP'},
+    {value:tmdM,color:ORANGE[0],label:'TMD'},
+    {value:tmeM,color:GREEN[0],label:'TME'},
   ]},
     i=>[cons.filter(r=>dk(r)===keys[i])]);
   buildT3Turno(base,'A','t3-2');
@@ -2268,14 +2553,12 @@ function buildT3HoraTurno(base){
     {label:'TMD',backgroundColor:ORANGE[0],data:tmdD},
     {label:'TME',backgroundColor:GREEN[0],data:tmeD},
     {label:'TMA',type:'line',data:HOUR_LAB.map(()=>null),borderColor:'#d1242f',borderDash:[6,4],borderWidth:2,pointRadius:0,fill:false,order:99},
-    {label:'/ Entrada A',backgroundColor:'#2da44e',data:HOUR_LAB.map(()=>null),stack:'_ent',order:98,borderWidth:0},
-    {label:'/ Entrada B',backgroundColor:'#e3a008',data:HOUR_LAB.map(()=>null),stack:'_ent',order:98,borderWidth:0},
-    {label:'/ Entrada C',backgroundColor:'#8b5cf6',data:HOUR_LAB.map(()=>null),stack:'_ent',order:98,borderWidth:0},
-  ],{stacked:true,redLabel:true,meanLines:[
-    {value:tmaM,color:'#d1242f'},
-    {value:tmpM,color:BLUE[0]},
-    {value:tmdM,color:ORANGE[0]},
-    {value:tmeM,color:GREEN[0]},
+    {label:'Entrada A / Entrada B / Entrada C',backgroundColor:'#8b5cf6',data:HOUR_LAB.map(()=>null),stack:'_ent',order:98,borderWidth:0,__countOverlay:true},
+  ],{stacked:true,redLabel:true,legendNote:'16-18h = transição (faixa EXT, fora dos turnos B/C)',meanLines:[
+    {value:tmaM,color:'#d1242f',label:'TMA'},
+    {value:tmpM,color:BLUE[0],label:'TMP'},
+    {value:tmdM,color:ORANGE[0],label:'TMD'},
+    {value:tmeM,color:GREEN[0],label:'TME'},
   ]},
     i=>[cons.filter(r=>parseInt(r.hs,10)===i)]);
   if(chart){
@@ -2300,16 +2583,16 @@ function buildT3Tipos(base){
   const tmpM=meanKey(cons,'tmp');
   const tmdM=meanKey(cons,'tmd');
   const tmeM=meanKey(cons,'tme');
-  barWithMeans('t3-5',labs,[
+barWithMeans('t3-5',labs,[
     {label:'TMP',backgroundColor:BLUE[0],data:tmpD},
     {label:'TMD',backgroundColor:ORANGE[0],data:tmdD},
     {label:'TME',backgroundColor:GREEN[0],data:tmeD},
     {label:'TMA',type:'line',data:labs.map(()=>null),borderColor:'#d1242f',borderDash:[6,4],borderWidth:2,pointRadius:0,fill:false,order:99},
   ],{stacked:true,redLabel:true,meanLines:[
-    {value:tmaM,color:'#d1242f'},
-    {value:tmpM,color:BLUE[0]},
-    {value:tmdM,color:ORANGE[0]},
-    {value:tmeM,color:GREEN[0]},
+    {value:tmaM,color:'#d1242f',label:'TMA'},
+    {value:tmpM,color:BLUE[0],label:'TMP'},
+    {value:tmdM,color:ORANGE[0],label:'TMD'},
+    {value:tmeM,color:GREEN[0],label:'TME'},
   ]},
     i=>[rows(labs[i])]);
 }
@@ -2320,47 +2603,75 @@ function buildT3Hora(base){
   const tmpD=HOUR_LAB.map((h,i)=>meanKey(cons.filter(r=>parseInt(r.he,10)===i),'tmp'));
   const tmdD=HOUR_LAB.map((h,i)=>meanKey(cons.filter(r=>parseInt(r.he,10)===i),'tmd'));
   const tmeD=HOUR_LAB.map((h,i)=>meanKey(cons.filter(r=>parseInt(r.he,10)===i),'tme'));
-  const totD=HOUR_LAB.map((h,i)=>fech.filter(r=>parseInt(r.he,10)===i).length);
+  const fechHs=fech.filter(r=>r.eo==='equipe'&&okEqd(r));
+  const days=cons.length?(new Set(cons.map(r=>r.d!==undefined&&r.d!==null?r.d:r.diaMes))).size||1:1;
+  const medSaidaD=HOUR_LAB.map((h,i)=>fech.filter(r=>parseInt(r.hs,10)===i).length/days);
+  const medEntradaD=HOUR_LAB.map((h,i)=>fech.filter(r=>parseInt(r.he,10)===i).length/days);
+  const turnOfHour=h=>h<8?'A':(h<15?'B':'C');
+  const bandOfHour=h=>h<8?'A':(h<16?'B':(h<19?'EXT':'C'));
+  const dayKey=r=>(r.d!==undefined&&r.d!==null?r.d:r.diaMes);
+  const daysList=[...new Set(cons.map(dayKey))];
+  const byDay={};
+  fech.forEach(r=>{const k=dayKey(r);(byDay[k]=byDay[k]||[]).push(r);});
+  const teamByBandDay={A:[],B:[],C:[],EXT:[]};
+  daysList.forEach(k=>{const arr=byDay[k]||[];['A','B','C','EXT'].forEach(T=>{const s=new Set();for(const r of arr){if(bandOfHour(parseInt(r.hs,10))===T&&r.ea)s.add(r.ea);}teamByBandDay[T].push(s.size);});});
+  const teamAvg={};['A','B','C','EXT'].forEach(T=>{const a=teamByBandDay[T];teamAvg[T]=a.length?a.reduce((x,y)=>x+y,0)/a.length:0;});
+  const eqD=HOUR_LAB.map((h,i)=>teamAvg[bandOfHour(i)]);
+  const prD=HOUR_LAB.map((h,i)=>{let incSum=0;for(const k of daysList){incSum+=(byDay[k]||[]).filter(r=>parseInt(r.hs,10)===i).length;}const incAvg=daysList.length?incSum/daysList.length:0;const t=teamAvg[bandOfHour(i)];return t>0?incAvg/t:0;});
   const tmaM=meanKey(cons,'tma');
   const tmpM=meanKey(cons,'tmp');
   const tmdM=meanKey(cons,'tmd');
   const tmeM=meanKey(cons,'tme');
+  const medSaidaM=fech.length/days;
+  const medEntradaM=fech.length/days;
   overlayDrill['t3-6']=[];
+  overlayDrillEq['t3-6']=[];
   const chart=barWithMeans('t3-6',HOUR_LAB,[
     {label:'TMP',backgroundColor:BLUE[0],data:tmpD},
     {label:'TMD',backgroundColor:ORANGE[0],data:tmdD},
     {label:'TME',backgroundColor:GREEN[0],data:tmeD},
     {label:'TMA',type:'line',data:HOUR_LAB.map(()=>null),borderColor:'#d1242f',borderDash:[6,4],borderWidth:2,pointRadius:0,fill:false,order:99},
-    {label:'Total fechados',type:'line',yAxisID:'y1',data:totD,borderColor:'#8e44ad',borderWidth:0,pointRadius:0,fill:false,order:98,datalabels:{display:false},__countOverlay:true},
-  ],{stacked:true,redLabel:true,meanLines:[
-    {value:tmaM,color:'#d1242f'},
-    {value:tmpM,color:BLUE[0]},
-    {value:tmdM,color:ORANGE[0]},
-    {value:tmeM,color:GREEN[0]},
+    {label:'Média saída',type:'line',yAxisID:'y1',data:medSaidaD,borderColor:'#8e44ad',backgroundColor:'#8e44ad',borderWidth:2,pointRadius:0,fill:false,order:98,datalabels:{display:false},__countOverlay:true},
+    {label:'Média entrada',type:'line',yAxisID:'y1',data:medEntradaD,borderColor:'#0aa2a2',backgroundColor:'#0aa2a2',borderWidth:2,pointRadius:0,fill:false,order:97,datalabels:{display:false},__countOverlay:true},
+    {label:'Média equipes/hora',type:'line',yAxisID:'y1',data:eqD,borderColor:'#5f6b7a',backgroundColor:'#5f6b7a',borderWidth:0,pointRadius:0,fill:false,order:96,datalabels:{display:false},__countOverlay:true,noLine:true},
+    {label:'Média produção/hora',type:'line',yAxisID:'y1',data:prD,borderColor:'#bf3f7f',backgroundColor:'#bf3f7f',borderWidth:0,pointRadius:0,fill:false,order:95,datalabels:{display:false},__countOverlay:true,noLine:true},
+  ],{stacked:true,redLabel:true,legendNote:'16-18h = transição (faixa EXT, fora dos turnos B/C)',meanLines:[
+    {value:tmaM,color:'#d1242f',label:'TMA'},
+    {value:tmpM,color:BLUE[0],label:'TMP'},
+    {value:tmdM,color:ORANGE[0],label:'TMD'},
+    {value:tmeM,color:GREEN[0],label:'TME'},
   ],
     totSingle:true},
-    i=>{const c=cons.filter(r=>parseInt(r.he,10)===i);const f=fech.filter(r=>parseInt(r.he,10)===i);overlayDrill['t3-6'][i]=f;return [c,c,c,c,f];});
+    i=>{const c=cons.filter(r=>parseInt(r.he,10)===i);const f=fech.filter(r=>parseInt(r.he,10)===i);const eq=fechHs.filter(r=>parseInt(r.hs,10)===i);overlayDrill['t3-6'][i]=f;overlayDrillEq['t3-6'][i]=eq;return [c,c,c,c,f,f,eq,eq];});
   if(chart){
-    const turnOfHour=h=>h<8?'A':(h<15?'B':'C');
-    const tmaByTurn={A:meanKey(cons.filter(r=>r.ta==='A'),'tma'),
-                     B:meanKey(cons.filter(r=>r.ta==='B'),'tma'),
-                     C:meanKey(cons.filter(r=>r.ta==='C'),'tma')};
+    chart.__countDrill={saida:[],entrada:[],equipes:[],producao:[]};
+    HOUR_LAB.forEach((h,i)=>{
+      chart.__countDrill.saida[i]=fech.filter(r=>parseInt(r.hs,10)===i);
+      chart.__countDrill.entrada[i]=fech.filter(r=>parseInt(r.he,10)===i);
+      chart.__countDrill.equipes[i]=fech.filter(r=>parseInt(r.hs,10)===i);
+      chart.__countDrill.producao[i]=fech.filter(r=>parseInt(r.hs,10)===i);
+    });
+    const tmaByBand={A:meanKey(cons.filter(r=>bandOfHour(parseInt(r.he,10))==='A'),'tma'),
+                     B:meanKey(cons.filter(r=>bandOfHour(parseInt(r.he,10))==='B'),'tma'),
+                     C:meanKey(cons.filter(r=>bandOfHour(parseInt(r.he,10))==='C'),'tma'),
+                     EXT:meanKey(cons.filter(r=>bandOfHour(parseInt(r.he,10))==='EXT'),'tma')};
     let dom='A';
-    if(tmaByTurn.B>tmaByTurn[dom])dom='B';
-    if(tmaByTurn.C>tmaByTurn[dom])dom='C';
-    const domRows=cons.filter(r=>r.ta===dom);
-    const other=cons.filter(r=>r.ta!==dom);
+    ['B','C','EXT'].forEach(T=>{ if(tmaByBand[T]>tmaByBand[dom]) dom=T; });
+    const domRows=cons.filter(r=>bandOfHour(parseInt(r.he,10))===dom);
+    const other=cons.filter(r=>bandOfHour(parseInt(r.he,10))!==dom);
     const peso=cons.length?Math.round(100*domRows.length/cons.length):0;
+    const tlabel=dom==='EXT'?'Transição 16-18h':'Turno '+dom;
     chart.__horaTurno={
       turno:dom,
-      max:tmaByTurn[dom]||0,
+      tlabel:tlabel,
+      max:tmaByBand[dom]||0,
       imp:(tmaM-(meanKey(other,'tma')||0)),
       peso:peso,
       nDom:domRows.length,
       nGeral:cons.length,
       geral:tmaM,
       sem:meanKey(other,'tma'),
-      hours:HOUR_LAB.map((h)=>turnOfHour(parseInt(h,10))===dom).map((on,i)=>on?i:-1).filter(i=>i>=0)
+      hours:HOUR_LAB.map((h)=>bandOfHour(parseInt(h,10))===dom).map((on,i)=>on?i:-1).filter(i=>i>=0)
     };
   }
 }
@@ -2377,14 +2688,12 @@ function buildT3Turno(base,turno,id){
     {label:'TMD',backgroundColor:ORANGE[0],data:tmdD},
     {label:'TME',backgroundColor:GREEN[0],data:tmeD},
     {label:'TMA',type:'line',data:labels.map(()=>null),borderColor:'#d1242f',borderDash:[6,4],borderWidth:2,pointRadius:0,fill:false,order:99},
-    {label:'/ Entrada A',backgroundColor:'#2da44e',data:labels.map(()=>null),stack:'_ent',order:98,borderWidth:0},
-    {label:'/ Entrada B',backgroundColor:'#e3a008',data:labels.map(()=>null),stack:'_ent',order:98,borderWidth:0},
-    {label:'/ Entrada C',backgroundColor:'#8b5cf6',data:labels.map(()=>null),stack:'_ent',order:98,borderWidth:0},
+    {label:'Entrada A / Entrada B / Entrada C',backgroundColor:'#8b5cf6',data:labels.map(()=>null),stack:'_ent',order:98,borderWidth:0,__countOverlay:true},
   ],{stacked:true,redLabel:true,meanLines:[
-    {value:tmaM,color:'#d1242f'},
-    {value:tmpM,color:BLUE[0]},
-    {value:tmdM,color:ORANGE[0]},
-    {value:tmeM,color:GREEN[0]},
+    {value:tmaM,color:'#d1242f',label:'TMA'},
+    {value:tmpM,color:BLUE[0],label:'TMP'},
+    {value:tmdM,color:ORANGE[0],label:'TMD'},
+    {value:tmeM,color:GREEN[0],label:'TME'},
   ]},
     i=>[cons.filter(r=>dk(r)===keys[i])]);
   if(chart){
@@ -2404,7 +2713,7 @@ function buildT2(base){
   const fe=base.filter(r=>r.s==='Fechado');
   const eqm=tally(fe.filter(okEqd),['eqd']);
   const eqK=Object.keys(eqm).sort((a,b)=>eqm[b]-eqm[a]).slice(0,20);
-  renderChart('t2-2',eqK,[{name:'Qtd',color:'#f0820f',rows:k=>fe.filter(r=>r.eqd===k&&okEqd(r))}],{indexAxis:'y'});
+  renderChart('t2-2',eqK,[{name:'Qtd',color:'#f0820f',rows:k=>cons.filter(r=>r.eqd===k&&okEqd(r))}],{indexAxis:'y'});
   renderChart('t2-3',pl,[{name:'Média TMA',color:'#1f6feb',rows:p=>cons.filter(r=>r.p===p),val:rows=>meanKey(rows,'tma')}],{});
 }
 function buildP2(base){
@@ -2768,8 +3077,11 @@ function openModal(id,title){
     if(srcChart.__entradaComp) modalChart.__entradaComp=srcChart.__entradaComp;
     if(srcChart.__horaTurno) modalChart.__horaTurno=srcChart.__horaTurno;
     if(srcChart.__totSingle) modalChart.__totSingle=true;
+    if(srcChart.__countDrill) modalChart.__countDrill=srcChart.__countDrill;
   }
   box.onclick=ev=>handleChartClick(id, modalChart, ev);
+  box.onmousemove=ev=>handleChartHover(id, modalChart, ev);
+  box.onmouseleave=()=>{ const t=document.getElementById('ov-tip'); if(t) t.style.display='none'; if(box) box.style.cursor='default'; };
   document.getElementById('modal').style.display='flex';
   setTimeout(()=>{modalOrig=captureOrig();},80);
 }
@@ -2778,6 +3090,8 @@ function closeModal(){
   if(modalChart){modalChart.destroy();modalChart=null;}
   modalOrig=null;
   box.onclick=null;
+  box.onmousemove=null;
+  box.onmouseleave=null;
   document.getElementById('modal').style.display='none';
 }
 function addMaxBtns(){
@@ -2982,7 +3296,7 @@ function bindDrill(){
       if(!el) return;
       const k=el.dataset.k;
       const r=kpiRows[k];
-      const fld=(k.indexOf('eq')>=0)?'eqd':(k.indexOf('prod')>=0?null:(k==='eqAtrib'?'eq':null));
+      const fld=(k.indexOf('eq')>=0)?'eqd':(k.indexOf('prod')>=0?'eqd':(k==='eqAtrib'?'eq':null));
       if(r&&r.length) openDrillModal(kpiTitles[k]||k,r,fld);
     });
   });
@@ -3006,13 +3320,13 @@ function sw(id){
 function renderSub(sub){
   CUR_SUB=sub;
   const base=segBase(sub);
-  const fns={e1:buildE1,s1:buildS1,m1:buildM1,o1:buildO1,x1:buildX1,x2:buildX2,x3:buildX3,e2:buildE2,s2:buildS2,o2:buildO2,t2:buildT2,p2:buildP2,xO:buildXO,e3:buildE3,s3:buildS3,m3:buildM1,o3:buildR3,o4:buildR4,t3:buildT3,x31:buildX1,xO3:buildXO,x32:buildX2,x33:buildX3};
+  const fns={e1:buildE1,s1:buildS1,m1:buildM1,bk1:buildBk1,o1:buildO1,x1:buildX1,x2:buildX2,x3:buildX3,e2:buildE2,s2:buildS2,o2:buildO2,t2:buildT2,p2:buildP2,xO:buildXO,e3:buildE3,s3:buildS3,m3:buildM1,bk3:buildBk3,o3:buildR3,o4:buildR4,t3:buildT3,x31:buildX1,xO3:buildXO,x32:buildX2,x33:buildX3};
   if(fns[sub]) fns[sub](base);
 }
 function renderPage(){
   if(tab==='d3') buildKPIsD3(); else buildKPIs();
   buildTop10();
-  const segs=(tab==='d1')?['e1','s1','m1','o1','x1','xO','x2','x3']:(tab==='d3')?['e3','s3','m3','t3','o3','o4','x31','xO3','x32','x33']:['e2','s2','o2','t2','p2'];
+  const segs=(tab==='d1')?['e1','s1','m1','bk1','o1','x1','xO','x2','x3']:(tab==='d3')?['e3','s3','m3','bk3','t3','o3','o4','x31','xO3','x32','x33']:['e2','s2','o2','t2','p2'];
   segs.forEach(sub=>renderSub(sub));
   const U=UF[tab]||{};
   document.getElementById('sub-info').textContent=(tab==='d1')?'Dashboard (1 polo)':(tab==='d3')?'Dashboard (Mês/Dia)':'Dashboard 2 (todos os polos)';
