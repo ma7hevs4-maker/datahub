@@ -55,7 +55,9 @@ def _make_ssl_ctx():
 
 def _version_file_candidates():
     exe_dir = Path(sys.executable).parent
-    candidates = [exe_dir / "version.txt"]
+    # onedir (PyInstaller 6.x) coloca os datas em _internal/, enquanto o
+    # _MEIPASS so existe no onefile. Checa ambos para o auto-update funcionar.
+    candidates = [exe_dir / "version.txt", exe_dir / "_internal" / "version.txt"]
     meipass = getattr(sys, "_MEIPASS", None)
     if meipass:
         candidates.append(Path(meipass) / "version.txt")

@@ -514,6 +514,31 @@ def _enviar_form_ms(driver, campo, seletor_campo, log_fn=print, timeout=5) -> bo
     return True
 
 
+def _clicar_tile_conta(driver, login, log_fn=print) -> bool:
+    """Na tela de 'conta salva' (account picker) da Microsoft, clica o tile que
+    contém o e-mail configurado para revelar o campo de senha/avançar o login.
+
+    Sem isso o fluxo travava: o app reconhecia a conta mas não clicava nela,
+    então o campo de senha nunca aparecia e ele aguardava o usuário manualmente.
+    """
+    if not login:
+        return False
+    alvos = [login]
+    if "@" in login:
+        alvos.append(login.split("@", 1)[0])
+    for alvo in alvos:
+        try:
+            el = _achar_por_texto(driver, alvo)
+            if el is not None:
+                _mouse_clicar(driver, *_coords_viewport(driver, el))
+                log_fn(f"  🖱️  tile da conta '{alvo}' clicado.")
+                time.sleep(2)
+                return True
+        except Exception:
+            continue
+    return False
+
+
 def tentar_login_automatico(driver, cfg: OperviewConfig, log_fn=print) -> bool:
     """Faz o login automático na página da Microsoft/Entra usando as credenciais
     do Operview configuradas no app.
@@ -539,8 +564,14 @@ def tentar_login_automatico(driver, cfg: OperviewConfig, log_fn=print) -> bool:
     try:
         campo = _ms_campo(driver, _SEL_EMAIL, timeout=15)
         if campo is None:
-            campo = _ms_campo(driver, _SEL_SENHA, timeout=8)
+            # Tela de 'conta salva' (account picker): o campo de e-mail/senha só
+            # aparece DEPOIS de clicar no tile da conta. Clica e reconsulta.
+            _clicar_tile_conta(driver, login, log_fn)
+            campo = _ms_campo(driver, _SEL_EMAIL, timeout=15)
             if campo is None:
+                campo = _ms_campo(driver, _SEL_SENHA, timeout=8)
+            if campo is None:
+                # sem campo após clicar o tile → confirma entrada (SSO parcial)
                 log_fn("  🔁 Sem campo de e-mail — confirmando entrada (sessão MS parcial? serviços de SSO).")
                 try:
                     _ms_botao_principal(driver, timeout=8)
