@@ -412,12 +412,29 @@ def _ainda_ms(driver) -> bool:
         return False
 
 
-def _ms_campo(driver, seletor, timeout=25):
+def _visivel(el):
     try:
-        return WebDriverWait(driver, timeout).until(
-            EC.presence_of_element_located((By.CSS_SELECTOR, seletor)))
+        return bool(el.is_displayed()) and (el.size.get("width", 0) or 0) > 0
+    except Exception:
+        return False
+
+
+def _ms_campo(driver, seletor, timeout=25):
+    """Espera pelo PRIMEIRO elemento VISÍVEL que casa o seletor.
+
+    Campos escondidos (ex.: input[type=password] oculto atrás do botão
+    'Usar a senha' da Microsoft) não contam — assim o passo de senha não é
+    preenchido 'no vazio' e o Enter não é enviado antes da senha entrar.
+    """
+    try:
+        els = WebDriverWait(driver, timeout).until(
+            lambda d: d.find_elements(By.CSS_SELECTOR, seletor) or None)
     except Exception:
         return None
+    if not els:
+        return None
+    vis = [e for e in els if _visivel(e)]
+    return vis[0] if vis else els[0]
 
 
 def _ms_botao_principal(driver, timeout=12) -> bool:
@@ -464,23 +481,30 @@ def _tem_mfa(driver) -> bool:
         "aprovar", "aprovação", "verificação adicional"))
 
 
-def _preencher_campo(driver, campo, texto) -> None:
-    """Foca, limpa e digita no campo com verificação de valor.
+def _preencher_campo(driver, campo, texto, tentativas=3) -> None:
+    """Foca, limpa e digita no campo, com verificação de valor e retries.
 
     O send_keys às vezes não 'entra' em inputs controlados (React/Angular);
-    por isso o fallback por JS (native setter + eventos input/change).
+    por isso o fallback por JS (native setter + eventos input/change) e a
+    releitura do valor para confirmar que a digitação 'colou'.
     """
-    try:
-        campo.click()
-    except Exception:
-        pass
-    try:
-        campo.clear()
-    except Exception:
-        pass
-    campo.send_keys(texto)
-    try:
-        if (campo.get_attribute("value") or "") != texto:
+    for _ in range(tentativas):
+        try:
+            campo.click()
+        except Exception:
+            pass
+        try:
+            campo.clear()
+        except Exception:
+            pass
+        campo.send_keys(texto)
+        try:
+            if (campo.get_attribute("value") or "") == texto:
+                return
+        except Exception:
+            return
+        # fallback por JS (React/Angular)
+        try:
             driver.execute_script(
                 "var el=arguments[0],s=arguments[1];"
                 "el.focus();"
@@ -490,8 +514,32 @@ def _preencher_campo(driver, campo, texto) -> None:
                 "el.dispatchEvent(new Event('input',{bubbles:true}));"
                 "el.dispatchEvent(new Event('change',{bubbles:true}));",
                 campo, texto)
-    except Exception:
-        pass
+        except Exception:
+            pass
+        try:
+            if (campo.get_attribute("value") or "") == texto:
+                return
+        except Exception:
+            return
+        time.sleep(0.3)
+
+
+def _preencher_senha_segura(driver, campo, senha, log_fn=print) -> bool:
+    """Preenche a senha e só prossegue se o valor realmente entrou no campo.
+
+    Evita o cenário 'Enter antes da senha': se o campo continuar vazio após
+    preencher, tenta de novo antes de enviar o formulário.
+    """
+    for _ in range(4):
+        _preencher_campo(driver, campo, senha)
+        try:
+            if (campo.get_attribute("value") or "").strip():
+                return True
+        except Exception:
+            return True
+        time.sleep(0.3)
+    log_fn("  ⚠️  Não foi possível confirmar a senha no campo — verifique o seletor.")
+    return False
 
 
 def _enviar_form_ms(driver, campo, seletor_campo, log_fn=print, timeout=5) -> bool:
@@ -916,8 +964,8 @@ def tentar_login_automatico(driver, cfg: OperviewConfig, log_fn=print) -> bool:
                     time.sleep(1)
                 log_fn("  ⚠️  Continua numa página da Microsoft sem campo de e-mail.")
                 return False
-            _preencher_campo(driver, campo, senha)
-            _enviar_form_ms(driver, campo, _SEL_SENHA, log_fn)
+            if _preencher_senha_segura(driver, campo, senha, log_fn):
+                _enviar_form_ms(driver, campo, _SEL_SENHA, log_fn)
         else:
             _preencher_campo(driver, campo, login)
             _enviar_form_ms(driver, campo, _SEL_EMAIL, log_fn)
@@ -932,8 +980,8 @@ def tentar_login_automatico(driver, cfg: OperviewConfig, log_fn=print) -> bool:
                 log_fn("  ⚠️  campo de senha não apareceu.")
                 return False
 
-            _preencher_campo(driver, campo, senha)
-            _enviar_form_ms(driver, campo, _SEL_SENHA, log_fn)
+            if _preencher_senha_segura(driver, campo, senha, log_fn):
+                _enviar_form_ms(driver, campo, _SEL_SENHA, log_fn)
 
         time.sleep(1.5)
         if _esperar_elemento(driver,
