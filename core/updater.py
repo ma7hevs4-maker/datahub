@@ -41,6 +41,16 @@ UPDATE_LOG = "update.log"
 UPDATE_FAILED_FLAG = "update_failed.flag"
 
 
+def _log(msg):
+    """Registra em %LOCALAPPDATA%/DataHub/update.log para diagnosticar falhas."""
+    try:
+        d = _log_dir()
+        with open(d / UPDATE_LOG, "a", encoding="utf-8") as f:
+            f.write(msg + "\n")
+    except Exception:
+        pass
+
+
 def _make_ssl_ctx():
     """Contexto SSL: cert store do SO (pega CA de proxy corporativo no Windows),
     depois certifi, e em ultimo caso sem verificacao."""
@@ -166,26 +176,42 @@ def check_for_update(repo=None, timeout=10):
         return {"status": "update", "tag": tag, "url": dl}
     except (urllib.error.URLError, urllib.error.HTTPError, ValueError,
             OSError, json.JSONDecodeError) as e:
+        _log(f"check_for_update erro: {e}")
         return {"status": "error", "error": str(e)}
     except Exception as e:  # noqa: BLE001
+        _log(f"check_for_update erro inesperado: {e}")
         return {"status": "error", "error": str(e)}
 
 
-def _download(url, dest, progress=None):
-    req = urllib.request.Request(url, headers={"User-Agent": "DataHub-Updater"})
-    with urllib.request.urlopen(req, timeout=120, context=_make_ssl_ctx()) as r:
-        total = int(r.headers.get("Content-Length", 0) or 0)
-        downloaded = 0
-        chunk = 64 * 1024
-        with open(dest, "wb") as f:
-            while True:
-                buf = r.read(chunk)
-                if not buf:
-                    break
-                f.write(buf)
-                downloaded += len(buf)
-                if progress and total:
-                    progress(downloaded, total)
+def _download(url, dest, progress=None, tentativas=3):
+    """Baixa o pacote com retries. Falha (raise) so apos esgotar as tentativas."""
+    last = None
+    for i in range(tentativas):
+        try:
+            req = urllib.request.Request(url, headers={"User-Agent": "DataHub-Updater"})
+            with urllib.request.urlopen(req, timeout=300, context=_make_ssl_ctx()) as r:
+                total = int(r.headers.get("Content-Length", 0) or 0)
+                downloaded = 0
+                chunk = 64 * 1024
+                with open(dest, "wb") as f:
+                    while True:
+                        buf = r.read(chunk)
+                        if not buf:
+                            break
+                        f.write(buf)
+                        downloaded += len(buf)
+                        if progress and total:
+                            progress(downloaded, total)
+            return
+        except Exception as e:  # noqa: BLE001
+            last = e
+            _log(f"download tentativa {i + 1}/{tentativas} falhou: {e}")
+            try:
+                if os.path.exists(dest):
+                    os.remove(dest)
+            except Exception:
+                pass
+    raise last or RuntimeError("download falhou")
 
 
 def _extract(zip_path, dest_dir):
@@ -242,10 +268,8 @@ def prepare_update(download_url, progress=None, expected_version=None):
         'echo [%DATE% %TIME%] === UPDATE INICIADO p/ {EXP} === >> "%LOG%"\n'
         'echo install_dir={INSTALL} >> "%LOG%"\n'
         'echo src={SRC} >> "%LOG%"\n'
-        ":kill\n"
         'taskkill /F /IM DataHub.exe /T >> "%LOG%" 2>&1\n'
         "timeout /t 3 /nobreak >nul\n"
-        'set "OK=0"\n'
         "for /L %%i in (1,1,3) do (\n"
         '  echo [%DATE% %TIME%] robocopy tentativa %%i >> "%LOG%"\n'
         '  robocopy "{SRC}" "{INSTALL}" /E /R:5 /W:3 /NFL /NDL /NJS >> "%LOG%" 2>&1\n'
@@ -254,18 +278,16 @@ def prepare_update(download_url, progress=None, expected_version=None):
         '  set "GOT=%GOT: =%"\n'
         '  if "%GOT%"=="{EXP}" (\n'
         '    echo [%DATE% %TIME%] VERSAO CONFERE: %GOT% >> "%LOG%"\n'
+        '    if exist "%LOCALAPPDATA%\\DataHub\\' + UPDATE_FAILED_FLAG + '" del "%LOCALAPPDATA%\\DataHub\\' + UPDATE_FAILED_FLAG + '"\n'
         "    goto done\n"
         "  )\n"
-        '  echo [%DATE% %TIME%] tentativa %%i: versao instalada=%GOT% (esperado {EXP}) >> "%LOG%"\n'
+        '  echo [%DATE% %TIME%] tentativa %%i: versao=%GOT% (esperado {EXP}) >> "%LOG%"\n'
         ")\n"
-        'echo [%DATE% %TIME%] FALHA: versao nao confere apos 3 tentativas >> "%LOG%"\n'
+        'echo [%DATE% %TIME%] AVISO: versao nao confere apos tentativas >> "%LOG%"\n'
         'echo {EXP} > "%LOCALAPPDATA%\\DataHub\\' + UPDATE_FAILED_FLAG + '"\n'
-        "goto end\n"
         ":done\n"
-        'echo [%DATE% %TIME%] SUCESSO >> "%LOG%"\n'
-        'if exist "%LOCALAPPDATA%\\DataHub\\' + UPDATE_FAILED_FLAG + '" del "%LOCALAPPDATA%\\DataHub\\' + UPDATE_FAILED_FLAG + '"\n'
+        'echo [%DATE% %TIME%] RELIGANDO APP >> "%LOG%"\n'
         'start "" "{INSTALL}\\DataHub.exe"\n'
-        ":end\n"
         'del "%~f0"\n'
     )
     bat_text = (
