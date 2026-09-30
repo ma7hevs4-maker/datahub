@@ -263,30 +263,50 @@ def prepare_update(download_url, progress=None, expected_version=None):
 
     bat_text = (
         "@echo off\n"
+        "setlocal EnableDelayedExpansion\n"
         "chcp 65001 >nul\n"
         'set "LOG=%LOCALAPPDATA%\\DataHub\\' + UPDATE_LOG + '"\n'
-        'echo [%DATE% %TIME%] === UPDATE INICIADO p/ {EXP} === >> "%LOG%"\n'
-        'echo install_dir={INSTALL} >> "%LOG%"\n'
-        'echo src={SRC} >> "%LOG%"\n'
-        'taskkill /F /IM DataHub.exe /T >> "%LOG%" 2>&1\n'
-        "timeout /t 3 /nobreak >nul\n"
-        "for /L %%i in (1,1,3) do (\n"
-        '  echo [%DATE% %TIME%] robocopy tentativa %%i >> "%LOG%"\n'
-        '  robocopy "{SRC}" "{INSTALL}" /E /R:5 /W:3 /NFL /NDL /NJS >> "%LOG%" 2>&1\n'
+        'set "FLAG=%LOCALAPPDATA%\\DataHub\\' + UPDATE_FAILED_FLAG + '"\n'
+        'echo [%DATE% %TIME%] === UPDATE INICIADO p/ {EXP} === >> "!LOG!"\n'
+        'echo install_dir={INSTALL} >> "!LOG!"\n'
+        'echo src={SRC} >> "!LOG!"\n'
+        "set MORTO=0\n"
+        "for /L %%a in (1,1,30) do (\n"
+        '  taskkill /F /IM DataHub.exe /T >> "!LOG!" 2>&1\n'
+        "  timeout /t 1 /nobreak >nul\n"
+        '  tasklist /FI "IMAGENAME eq DataHub.exe" 2>nul | find /I "DataHub.exe" >nul\n'
+        "  if errorlevel 1 ( set MORTO=1 & goto appmorto )\n"
+        ")\n"
+        ":appmorto\n"
+        'echo [%DATE% %TIME%] app morto=!MORTO! >> "!LOG!"\n'
+        "timeout /t 2 /nobreak >nul\n"
+        "set OK=0\n"
+        "for /L %%i in (1,1,6) do (\n"
+        '  echo [%DATE% %TIME%] robocopy tentativa %%i >> "!LOG!"\n'
+        '  robocopy "{SRC}" "{INSTALL}" /E /R:10 /W:5 /NFL /NDL /NJS >> "!LOG!" 2>&1\n'
         '  set "GOT="\n'
-        '  for /f "usebackq delims=" %%v in (`type "{INSTALL}\\version.txt" 2^>nul`) do set "GOT=%%v"\n'
-        '  set "GOT=%GOT: =%"\n'
-        '  if "%GOT%"=="{EXP}" (\n'
-        '    echo [%DATE% %TIME%] VERSAO CONFERE: %GOT% >> "%LOG%"\n'
-        '    if exist "%LOCALAPPDATA%\\DataHub\\' + UPDATE_FAILED_FLAG + '" del "%LOCALAPPDATA%\\DataHub\\' + UPDATE_FAILED_FLAG + '"\n'
+        '  if exist "{INSTALL}\\_internal\\version.txt" (\n'
+        '    for /f "usebackq delims=" %%v in (`type "{INSTALL}\\_internal\\version.txt"`) do set "GOT=%%v"\n'
+        "  )\n"
+        '  if not defined GOT if exist "{INSTALL}\\version.txt" (\n'
+        '    for /f "usebackq delims=" %%v in (`type "{INSTALL}\\version.txt"`) do set "GOT=%%v"\n'
+        "  )\n"
+        '  set "GOT=!GOT: =!"\n'
+        '  echo [%DATE% %TIME%] tentativa %%i: versao="!GOT!" esperado="{EXP}" >> "!LOG!"\n'
+        '  if "!GOT!"=="{EXP}" (\n'
+        '    echo [%DATE% %TIME%] VERSAO CONFERE >> "!LOG!"\n'
+        '    if exist "!FLAG!" del "!FLAG!"\n'
+        "    set OK=1\n"
         "    goto done\n"
         "  )\n"
-        '  echo [%DATE% %TIME%] tentativa %%i: versao=%GOT% (esperado {EXP}) >> "%LOG%"\n'
+        "  timeout /t 3 /nobreak >nul\n"
         ")\n"
-        'echo [%DATE% %TIME%] AVISO: versao nao confere apos tentativas >> "%LOG%"\n'
-        'echo {EXP} > "%LOCALAPPDATA%\\DataHub\\' + UPDATE_FAILED_FLAG + '"\n'
         ":done\n"
-        'echo [%DATE% %TIME%] RELIGANDO APP >> "%LOG%"\n'
+        'if "!OK!"=="0" (\n'
+        '  echo [%DATE% %TIME%] AVISO: copia nao confirmada (arquivo em uso?) >> "!LOG!"\n'
+        '  echo {EXP} > "!FLAG!"\n'
+        ")\n"
+        'echo [%DATE% %TIME%] RELIGANDO APP >> "!LOG!"\n'
         'start "" "{INSTALL}\\DataHub.exe"\n'
         'del "%~f0"\n'
     )

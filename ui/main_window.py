@@ -1169,19 +1169,34 @@ class MainWindow(QMainWindow):
         ).start()
 
     def _checar_falha_update(self):
-        """Avisa se um update.bat anterior falhou (versao nao bateu apos copiar)."""
+        """Avisa se um update.bat anterior falhou (versao nao bateu apos copiar).
+
+        Falso positivo: se o app ja esta na versao que a flag diz ter falhado,
+        a copia deu certo (a checagem antiga lia o version.txt errado). Nesse
+        caso apaga a flag silenciosamente, sem avisar.
+        """
         try:
             base = os.environ.get("LOCALAPPDATA") or tempfile.gettempdir()
             flag = Path(base) / "DataHub" / "update_failed.flag"
-            if flag.exists():
+            if not flag.exists():
+                return
+            try:
                 versao = flag.read_text(encoding="utf-8", errors="ignore").strip()
-                flag.unlink(missing_ok=True)
-                QMessageBox.warning(
-                    self, "Atualização falhou",
-                    f"A atualização para a versão {versao} não foi concluída "
-                    "(o arquivo em uso travou a cópia).\n"
-                    "Baixe o Setup mais recente em github.com/ma7hevs4-maker/datahub "
-                    "e reinstale para corrigir.")
+            except Exception:
+                versao = ""
+            flag.unlink(missing_ok=True)
+            try:
+                atual = local_version()
+            except Exception:
+                atual = ""
+            if versao and atual and versao == atual:
+                return
+            QMessageBox.warning(
+                self, "Atualização falhou",
+                f"A atualização para a versão {versao} não foi concluída "
+                "(o arquivo em uso travou a cópia).\n"
+                "Baixe o Setup mais recente em github.com/ma7hevs4-maker/datahub "
+                "e reinstale para corrigir.")
         except Exception:
             pass
 
