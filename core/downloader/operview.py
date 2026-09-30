@@ -515,28 +515,87 @@ def _enviar_form_ms(driver, campo, seletor_campo, log_fn=print, timeout=5) -> bo
 
 
 def _clicar_tile_conta(driver, login, log_fn=print) -> bool:
-    """Na tela de 'conta salva' (account picker) da Microsoft, clica o tile que
-    contém o e-mail configurado para revelar o campo de senha/avançar o login.
+    """Na tela 'Escolher conta' da Microsoft, clica o tile da conta salva para
+    revelar o campo de senha. O e-mail no tile vem MASKED (ex.: jo**@empresa.com),
+    então não dá pra confiar no match de texto completo: tenta o e-mail e, se não
+    achar, clica o PRIMEIRO tile visível que não seja 'Usar outra conta'.
 
-    Sem isso o fluxo travava: o app reconhecia a conta mas não clicava nela,
-    então o campo de senha nunca aparecia e ele aguardava o usuário manualmente.
+    Sem isso o fluxo travava: o app achava a conta mas nunca clicava no tile,
+    o campo de senha não aparecia e ele aguardava o usuário manualmente.
     """
-    if not login:
-        return False
-    alvos = [login]
-    if "@" in login:
-        alvos.append(login.split("@", 1)[0])
-    for alvo in alvos:
-        try:
-            el = _achar_por_texto(driver, alvo)
-            if el is not None:
+    # 1) match direto pelo e-mail (completo ou parte antes do @)
+    if login:
+        alvos = [login]
+        if "@" in login:
+            alvos.append(login.split("@", 1)[0])
+        for alvo in alvos:
+            try:
+                el = _achar_por_texto(driver, alvo)
+                if el is not None:
+                    _mouse_clicar(driver, *_coords_viewport(driver, el))
+                    log_fn(f"  🖱️  tile da conta clicado (match '{alvo}').")
+                    time.sleep(2)
+                    return True
+            except Exception:
+                continue
+    # 2) fallback: primeiro tile '.row.tile' visível, exceto 'outra conta'
+    try:
+        for el in driver.find_elements(By.CSS_SELECTOR, ".row.tile"):
+            try:
+                if not el.is_displayed():
+                    continue
+                txt = (el.text or "").lower()
+                if any(p in txt for p in ("outra conta", "another account",
+                                          "other account", "use another",
+                                          "usar outra")):
+                    continue
                 _mouse_clicar(driver, *_coords_viewport(driver, el))
-                log_fn(f"  🖱️  tile da conta '{alvo}' clicado.")
+                log_fn("  🖱️  tile da conta clicado (fallback: primeiro tile).")
                 time.sleep(2)
                 return True
-        except Exception:
-            continue
+            except Exception:
+                continue
+    except Exception:
+        pass
     return False
+
+
+def _salvar_diagnostico_login(driver, log_fn=print):
+    """Salva a tela de login exata (HTML + print) quando o fluxo trava, para o
+    usuário enviar e o mecanismo ser ajustado com precisão (sem adivinhação)."""
+    try:
+        from pathlib import Path as _P
+        import datetime as _dt
+        pasta = _P.home() / "Desktop"
+        try:
+            pasta.mkdir(exist_ok=True)
+        except Exception:
+            pasta = _P.cwd()
+        ts = _dt.datetime.now().strftime("%Y%m%d_%H%M%S")
+        html = pasta / f"diagnostico_login_{ts}.html"
+        png = pasta / f"diagnostico_login_{ts}.png"
+        try:
+            url = driver.current_url
+            titulo = driver.title
+        except Exception:
+            url, titulo = "", ""
+        try:
+            src = driver.page_source or ""
+        except Exception:
+            src = ""
+        try:
+            html.write_text(
+                f"<!-- URL: {url}\n<!-- TITLE: {titulo}\n" + src,
+                encoding="utf-8", errors="ignore")
+        except Exception:
+            pass
+        try:
+            driver.save_screenshot(str(png))
+        except Exception:
+            pass
+        log_fn(f"  📸 DIAGNÓSTICO DE LOGIN salvo em:\n     {html}\n     {png}")
+    except Exception as e:
+        log_fn(f"  ⚠️  falha ao salvar diagnóstico de login: {e}")
 
 
 def tentar_login_automatico(driver, cfg: OperviewConfig, log_fn=print) -> bool:
@@ -1206,6 +1265,7 @@ def baixar_incidencias(cfg: OperviewConfig, pasta_local, data_ini: datetime,
         # pedimos a confirmação de login.
         if not _navegar_consulta(driver, caps, pasta_local, log_fn, stop_event):
             log_fn("🔔 Operview não acessível — solicitando login manual.")
+            _salvar_diagnostico_login(driver, log_fn)
             if notificar:
                 notificar(login_event)
             log_fn("⏳ Aguardando login (faça o login e clique OK, ou até 15 min)...")
