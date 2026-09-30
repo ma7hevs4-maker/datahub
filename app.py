@@ -325,4 +325,11 @@ class App:
 
 
 if __name__ == "__main__":
+    import sys
+    if "--gravar-login" in sys.argv[1:]:
+        from config import load_config
+        from core.downloader.operview import gravar_login_operview
+        _cfg = load_config()
+        gravar_login_operview(print, _cfg.operview)
+        sys.exit(0)
     App().run()

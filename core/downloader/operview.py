@@ -598,6 +598,226 @@ def _salvar_diagnostico_login(driver, log_fn=print):
         log_fn(f"  ⚠️  falha ao salvar diagnóstico de login: {e}")
 
 
+# ── Modo de gravação das posições de login (usado por DataHub --gravar-login) ──
+# O usuário clica na conta salva e no campo de senha; capturamos a posição de
+# viewport (x,y) e a identidade real do elemento (id/name/type/class/xpath),
+# salvando em login_posicoes.txt + o HTML da tela, para o dev ajustar o login
+# com precisão (sem adivinhação de seletor).
+_CAPTURA_GRAVACAO_JS = r"""
+(function(){
+  if(!window.__login_rec){ window.__login_rec = []; }
+  if(window.__login_cap_installed){ return; }
+  window.__login_cap_installed = true;
+  function buildXpath(el){
+    if(!el) return '';
+    var parts = [];
+    for(var e = el; e && e.nodeType === 1; e = e.parentNode){
+      var tag = e.tagName.toLowerCase();
+      var sel = tag;
+      if(e.id){ sel = "*[@id='" + e.id + "']"; }
+      else if(e.getAttribute && e.getAttribute('name')){ sel = tag + "[@name='" + e.getAttribute('name') + "']"; }
+      else if(e.tagName === 'INPUT' && e.type){ sel = tag + "[@type='" + e.type + "']"; }
+      else if(e.className && typeof e.className === 'string' && e.className.trim()){
+        var c = e.className.trim().split(/\s+/)[0];
+        sel = tag + "[contains(@class,'" + c + "')]";
+      }
+      var idx = 1;
+      var sibs = (e.parentNode ? e.parentNode.children : []);
+      for(var i = 0; i < sibs.length; i++){
+        if(sibs[i].tagName === e.tagName){ if(sibs[i] === e) break; idx++; }
+      }
+      parts.unshift(sel + "[" + idx + "]");
+    }
+    return "/" + parts.join("/");
+  }
+  function nearestTileXpath(el){
+    for(var e = el; e; e = e.parentNode){
+      if(e.getAttribute && typeof e.getAttribute('class') === 'string' &&
+         e.getAttribute('class').toLowerCase().indexOf('tile') >= 0){
+        return buildXpath(e);
+      }
+    }
+    return '';
+  }
+  document.addEventListener('click', function(ev){
+    try{
+      var el = ev.target;
+      if(!el || !el.tagName) return;
+      var info = {
+        vx: ev.clientX, vy: ev.clientY,
+        tag: el.tagName,
+        id: el.id || '',
+        name: (el.getAttribute ? el.getAttribute('name') : '') || '',
+        type: (el.getAttribute ? el.getAttribute('type') : '') || '',
+        cls: (typeof el.className === 'string' ? el.className : ''),
+        ph: (el.getAttribute ? el.getAttribute('placeholder') : '') || '',
+        text: (el.textContent || '').replace(/\s+/g,' ').trim().slice(0,120),
+        value: (el.value || '').toString().slice(0,40),
+        xpath: buildXpath(el),
+        tile_xpath: nearestTileXpath(el)
+      };
+      try{ info.html = (el.outerHTML || '').slice(0,500); }catch(e){ info.html=''; }
+      window.__login_rec.push(info);
+    }catch(e){}
+  }, true);
+})();
+"""
+
+
+def _aguardar_clique(driver, timeout):
+    """Lê (e zera atomicamente) o próximo clique capturado na página."""
+    fim = time.time() + timeout
+    while time.time() < fim:
+        try:
+            arr = driver.execute_script(
+                "var a = window.__login_rec || []; window.__login_rec = []; return a;")
+        except Exception:
+            arr = []
+        if arr:
+            return arr[0]
+        time.sleep(0.5)
+    return None
+
+
+def _salvar_registros(registros, out_txt):
+    import json as _json
+    linhas = []
+    linhas.append("# Operview - posicoes gravadas (DataHub --gravar-login)")
+    linhas.append(f"# data: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    rotulos = ["conta_salva", "campo_senha", "botao_entrar"]
+    for i, r in enumerate(registros):
+        rot = rotulos[i] if i < len(rotulos) else f"click_{i+1}"
+        linhas.append(f"[{rot}]")
+        linhas.append(f"  viewport_x = {r.get('vx')}")
+        linhas.append(f"  viewport_y = {r.get('vy')}")
+        linhas.append(f"  tag = {r.get('tag')}")
+        linhas.append(f"  id = {r.get('id')}")
+        linhas.append(f"  name = {r.get('name')}")
+        linhas.append(f"  type = {r.get('type')}")
+        linhas.append(f"  class = {r.get('cls')}")
+        linhas.append(f"  placeholder = {r.get('ph')}")
+        linhas.append(f"  text = {r.get('text')}")
+        linhas.append(f"  value = {r.get('value')}")
+        linhas.append(f"  xpath = {r.get('xpath')}")
+        if r.get('tile_xpath'):
+            linhas.append(f"  tile_xpath = {r.get('tile_xpath')}")
+        linhas.append(f"  html = {r.get('html')}")
+        linhas.append("")
+    linhas.append("__JSON__")
+    linhas.append(_json.dumps(registros, ensure_ascii=False))
+    out_txt.write_text("\n".join(linhas), encoding="utf-8", errors="ignore")
+
+
+def gravar_login_operview(log_fn=print, cfg=None):
+    """Abre o login do Operview num Chrome visível e grava onde o usuário clica
+    (conta salva + campo de senha), salvando login_posicoes.txt e o HTML da tela
+    no Desktop, para o desenvolvedor ajustar o mecanismo de login com precisão.
+
+    Uso: DataHub.exe --gravar-login  (feche o DataHub antes de rodar).
+    """
+    from pathlib import Path as _P
+    try:
+        from PyQt6.QtWidgets import QApplication, QMessageBox
+    except Exception:
+        QApplication = None
+    desktop = _P.home() / "Desktop"
+    try:
+        desktop.mkdir(exist_ok=True)
+    except Exception:
+        desktop = _P.cwd()
+    app_qt = None
+    if QApplication is not None:
+        try:
+            app_qt = QApplication([])
+        except Exception:
+            app_qt = None
+
+    def avisar(msg, titulo="DataHub — Gravação de login"):
+        if app_qt is not None:
+            try:
+                QMessageBox.information(None, titulo, msg)
+                return
+            except Exception:
+                pass
+        log_fn(msg)
+
+    avisar(
+        "MODO GRAVAÇÃO DO LOGIN DO OPERVIEW\n\n"
+        "1) Clique na sua CONTA salva (o tile da conta).\n"
+        "2) Quando o campo de SENHA aparecer, clique nele.\n"
+        "3) (opcional) clique no botão ENTRAR.\n\n"
+        "As posições serão salvas em 'login_posicoes.txt' no seu Desktop."
+    )
+
+    pasta_dl = str(desktop)
+    driver = None
+    registros = []
+    try:
+        driver = _criar_driver(pasta_dl, headless=False, perfil=_PERFIL_OPERViEW)
+        url = (cfg.url if cfg else None) or URL_PADRAO
+        driver.get(url)
+        time.sleep(3)
+        if not _esta_ms_login(driver):
+            # Força re-autenticação mantendo a conta salva no picker do perfil.
+            try:
+                driver.get("https://login.microsoftonline.com/")
+                time.sleep(2)
+                driver.delete_all_cookies()
+            except Exception:
+                pass
+            driver.get(url)
+            time.sleep(4)
+        driver.execute_script(_CAPTURA_GRAVACAO_JS)
+        try:
+            driver.execute_cdp_cmd("Page.addScriptToEvaluateOnNewDocument",
+                                   {"source": _CAPTURA_GRAVACAO_JS})
+        except Exception:
+            pass
+
+        passos = [
+            ("conta salva", 120),
+            ("campo de senha", 120),
+            ("botão entrar (opcional)", 25),
+        ]
+        for i, (nome, tout) in enumerate(passos):
+            log_fn(f"  🎬 Aguardando clique: {nome} (até {tout}s)...")
+            clip = _aguardar_clique(driver, tout)
+            if clip is None:
+                if i < 2:
+                    log_fn(f"  ⚠️  Nenhum clique capturado para '{nome}'.")
+                    break
+                log_fn("  (botão entrar não gravado — ok, opcional)")
+                break
+            registros.append(clip)
+            log_fn(f"  ✅ Capturado '{nome}': tag={clip.get('tag')} id={clip.get('id')} "
+                   f"name={clip.get('name')} type={clip.get('type')}")
+
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+        out_txt = desktop / "login_posicoes.txt"
+        out_html = desktop / f"login_posicoes_pagina_{ts}.html"
+        _salvar_registros(registros, out_txt)
+        try:
+            out_html.write_text(
+                f"<!-- URL: {driver.current_url} -->\n" + (driver.page_source or ""),
+                encoding="utf-8", errors="ignore")
+        except Exception:
+            pass
+        avisar(
+            f"Gravação concluída!\n\nArquivo: {out_txt}\n\n"
+            f"Envie 'login_posicoes.txt' (e o .html) para o desenvolvedor.\n\n"
+            f"Cliques gravados: {len(registros)}"
+        )
+    except Exception as e:
+        log_fn(f"  ❌ Erro na gravação: {e}")
+        avisar(f"Erro na gravação:\n{e}")
+    finally:
+        if driver is not None:
+            try:
+                driver.quit()
+            except Exception:
+                pass
+
+
 def tentar_login_automatico(driver, cfg: OperviewConfig, log_fn=print) -> bool:
     """Faz o login automático na página da Microsoft/Entra usando as credenciais
     do Operview configuradas no app.
