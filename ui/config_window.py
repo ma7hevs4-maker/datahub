@@ -167,17 +167,15 @@ class ConfigWindow(tk.Toplevel):
             return
         self._update_status.set("Verificando...")
         self.update_idletasks()
-        try:
-            res = check_for_update(REPO)
-        except Exception as e:  # noqa: BLE001
-            self._update_status.set(f"Erro ao verificar: {e}")
+        res = check_for_update(REPO)
+        if res is None or res.get("status") == "error":
+            msg = (res or {}).get("error", "sem conexão com o GitHub")
+            self._update_status.set(f"Não foi possível verificar: {msg}")
             return
-        if not res:
-            self._update_status.set(
-                "DataHub está atualizado (ou não foi possível verificar a conexão)."
-            )
+        if res.get("status") == "uptodate":
+            self._update_status.set("DataHub está atualizado.")
             return
-        tag, url = res
+        tag, url = res["tag"], res["url"]
         if not messagebox.askyesno(
             "Atualização disponível",
             f"Nova versão {tag} disponível.\n"
@@ -189,7 +187,7 @@ class ConfigWindow(tk.Toplevel):
         self._update_status.set(f"Baixando {tag}...")
         self.update_idletasks()
         try:
-            bat = prepare_update(url, progress=None)
+            bat = prepare_update(url, progress=None, expected_version=tag)
         except Exception as e:  # noqa: BLE001
             self._update_status.set(f"Falha no download: {e}")
             return

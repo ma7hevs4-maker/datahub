@@ -9,9 +9,11 @@ por app.py:
 
 Todo o fluxo (core/) fica inalterado.
 """
+import os
 import sys
 import calendar
 import threading
+import tempfile
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Callable
@@ -402,6 +404,7 @@ class MainWindow(QMainWindow):
         _apply_palette(self._app, self._tema)
         _set_fonts()
         self._build()
+        self._checar_falha_update()
 
         QTimer.singleShot(4000, self._checar_update_automatico)
         # Reconfere periodicamente p/ pegar novas versões sem precisar reiniciar o app.
@@ -1074,16 +1077,15 @@ class MainWindow(QMainWindow):
             return
         self._update_status.setText("Verificando...")
         self._app.processEvents()
-        try:
-            res = check_for_update(REPO)
-        except Exception as e:
-            self._update_status.setText(f"Erro ao verificar: {e}")
+        res = check_for_update(REPO)
+        if res is None or res.get("status") == "error":
+            msg = (res or {}).get("error", "sem conexão com o GitHub")
+            self._update_status.setText(f"Não foi possível verificar: {msg}")
             return
-        if not res:
-            self._update_status.setText(
-                "DataHub está atualizado (ou não foi possível verificar a conexão).")
+        if res.get("status") == "uptodate":
+            self._update_status.setText("DataHub está atualizado.")
             return
-        tag, url = res
+        tag, url = res["tag"], res["url"]
         resp = QMessageBox.question(
             self, "Atualização disponível",
             f"Nova versão {tag} disponível.\n"
@@ -1096,7 +1098,7 @@ class MainWindow(QMainWindow):
         self._update_status.setText(f"Baixando {tag}...")
         self._app.processEvents()
         try:
-            bat = prepare_update(url, progress=None)
+            bat = prepare_update(url, progress=None, expected_version=tag)
         except Exception as e:
             self._update_status.setText(f"Falha no download: {e}")
             return
@@ -1121,16 +1123,18 @@ class MainWindow(QMainWindow):
         try:
             self._update_status.setText(f"Baixando e atualizando para {tag}...")
             self._app.processEvents()
-            bat = prepare_update(url, progress=None)
+            bat = prepare_update(url, progress=None, expected_version=tag)
         except Exception as e:  # noqa: BLE001
             self._update_status.setText(f"Falha ao baixar atualização: {e}")
             return
         launch_updater(bat)
 
     def _on_update_check(self, res):
-        if res is None:
+        if res is None or not isinstance(res, dict) or res.get("status") == "error":
             return
-        tag, url = res
+        if res.get("status") == "uptodate":
+            return
+        tag, url = res["tag"], res["url"]
         try:
             self._tray.showMessage(
                 "DataHub",
@@ -1147,6 +1151,23 @@ class MainWindow(QMainWindow):
         threading.Thread(
             target=self._baixar_e_aplicar, args=(url, tag), daemon=True
         ).start()
+
+    def _checar_falha_update(self):
+        """Avisa se um update.bat anterior falhou (versao nao bateu apos copiar)."""
+        try:
+            base = os.environ.get("LOCALAPPDATA") or tempfile.gettempdir()
+            flag = Path(base) / "DataHub" / "update_failed.flag"
+            if flag.exists():
+                versao = flag.read_text(encoding="utf-8", errors="ignore").strip()
+                flag.unlink(missing_ok=True)
+                QMessageBox.warning(
+                    self, "Atualização falhou",
+                    f"A atualização para a versão {versao} não foi concluída "
+                    "(o arquivo em uso travou a cópia).\n"
+                    "Baixe o Setup mais recente em github.com/ma7hevs4-maker/datahub "
+                    "e reinstale para corrigir.")
+        except Exception:
+            pass
 
     # ── Log público (thread-safe) ──────────────────────────────────────────────
 

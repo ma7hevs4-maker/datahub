@@ -2,14 +2,20 @@
 """Auto-update do DataHub a partir de GitHub Releases.
 
 Fluxo:
-  1. check_for_update(repo) -> (new_version:str, download_url:str) | None
-  2. prepare_update(download_url, progress) -> baixa o zip, extrai em %TEMP%
-     e gera um .bat que copia a pasta DataHub por cima da instalada e
-     relanca o exe.
-  3. launch_updater(bat_path) -> dispara o .bat em processo separado e
-     encerra este app (para liberar o exe em uso).
+  1. check_for_update(repo) -> dict com status:
+       {"status":"update", "tag":str, "url":str}   -> ha versao nova
+       {"status":"uptodate", "tag":str}            -> ja e o mais novo
+       {"status":"error", "error":str}             -> falha de rede/API
+  2. prepare_update(download_url, expected_version) -> baixa o zip, extrai em
+     %TEMP% e gera um .bat que:
+       - encerra TODAS as instancias do DataHub.exe (evita arquivo travado),
+       - copia a pasta por cima da instalada (robocopy com varias tentativas),
+       - CONFERE se o version.txt instalado bate com a versao esperada,
+       - so entao relanca o exe; se nao bater, grava update_failed.flag.
+  3. launch_updater(bat_path) -> dispara o .bat em processo separado e encerra
+     este app (para liberar o exe em uso).
 
-    O pacote publicado num Release do GitHub deve ser um zip cujo conteudo tem
+O pacote publicado num Release do GitHub deve ser um zip cujo conteudo tenha
 uma pasta "DataHub" (ou seja: zipar a pasta dist/DataHub, nao o seu conteudo).
 O asset deve chamar-se "DataHub.zip" (ou ser o unico .zip do Release).
 """
@@ -31,6 +37,8 @@ REPO = "ma7hevs4-maker/datahub"
 APP_VERSION_FALLBACK = "0.0.0"
 API_URL = "https://api.github.com/repos/{repo}/releases/latest"
 ASSET_NAME = "DataHub.zip"  # nome esperado do asset no Release
+UPDATE_LOG = "update.log"
+UPDATE_FAILED_FLAG = "update_failed.flag"
 
 
 def _make_ssl_ctx():
@@ -78,12 +86,21 @@ def local_version():
 
 
 def is_installed():
-    """True somente quando rodando do build (dist/DataHub) com version.txt.
-    Evita que o update sobrescreva a pasta do Python ao rodar via 'python app.py'."""
+    """True quando rodando do build (dist/DataHub). Evita que o update sobrescreva
+    a pasta do Python ao rodar via 'python app.py'.
+
+    Considera instalado tambem se existir o exe empacotado ou a pasta _internal,
+    mesmo que o version.txt tenha sumido (assim o botao nao se recusa a atualizar).
+    """
     try:
-        return any(p.exists() for p in _version_file_candidates())
+        if any(p.exists() for p in _version_file_candidates()):
+            return True
+        exe_dir = Path(sys.executable).parent
+        if (exe_dir / "DataHub.exe").exists() or (exe_dir / "_internal").exists():
+            return True
     except Exception:
-        return False
+        pass
+    return False
 
 
 def _norm_tag(tag):
@@ -113,8 +130,12 @@ def is_newer(remote, current):
 
 
 def check_for_update(repo=None, timeout=10):
-    """Retorna (tag, download_url) se houver versao mais nova, senao None.
-    Qualquer erro de rede/JSON e tratado como 'sem atualizacao' (silencio safe)."""
+    """Retorna um dict de estado (veja docstring do modulo).
+
+    Qualquer erro de rede/JSON e tratado como status 'error' (nao como
+    'uptodate') para a UI poder avisar 'nao foi possivel verificar' em vez de
+    mentir 'esta atualizado'.
+    """
     repo = repo or REPO
     try:
         url = API_URL.format(repo=repo)
@@ -136,18 +157,18 @@ def check_for_update(repo=None, timeout=10):
                 None,
             )
         if not tag or not asset:
-            return None
+            return {"status": "error", "error": "release sem asset DataHub.zip"}
         dl = asset.get("browser_download_url")
         if not dl:
-            return None
+            return {"status": "error", "error": "asset sem url de download"}
         if not is_newer(tag, local_version()):
-            return None
-        return (tag, dl)
+            return {"status": "uptodate", "tag": tag}
+        return {"status": "update", "tag": tag, "url": dl}
     except (urllib.error.URLError, urllib.error.HTTPError, ValueError,
-            OSError, json.JSONDecodeError):
-        return None
-    except Exception:
-        return None
+            OSError, json.JSONDecodeError) as e:
+        return {"status": "error", "error": str(e)}
+    except Exception as e:  # noqa: BLE001
+        return {"status": "error", "error": str(e)}
 
 
 def _download(url, dest, progress=None):
@@ -172,9 +193,22 @@ def _extract(zip_path, dest_dir):
         z.extractall(dest_dir)
 
 
-def prepare_update(download_url, progress=None):
+def _log_dir():
+    base = os.environ.get("LOCALAPPDATA") or tempfile.gettempdir()
+    d = Path(base) / "DataHub"
+    try:
+        d.mkdir(parents=True, exist_ok=True)
+    except Exception:
+        pass
+    return d
+
+
+def prepare_update(download_url, progress=None, expected_version=None):
     """Baixa e extrai; retorna o caminho do script de update (.bat) pronto.
-    install_dir = pasta que contem o DataHub.exe (pasta 'DataHub')."""
+
+    install_dir = pasta que contem o DataHub.exe (pasta 'DataHub').
+    O .bat gerado encerra o app, copia e CONFERE a versao antes de relancar.
+    """
     install_dir = Path(sys.executable).parent
     tmp = Path(tempfile.gettempdir()) / "datahub_upd"
     if tmp.exists():
@@ -197,23 +231,60 @@ def prepare_update(download_url, progress=None):
     if src is None:
         raise FileNotFoundError("Pasta DataHub nao encontrada no pacote de atualizacao.")
 
-    bat = tmp / "update.bat"
+    exp = _norm_tag(expected_version or "")
     install_escaped = str(install_dir).replace('"', '""')
     src_escaped = str(src).replace('"', '""')
+
     bat_text = (
         "@echo off\n"
         "chcp 65001 >nul\n"
-        "timeout /t 2 /nobreak >nul\n"
-        f'robocopy "{src_escaped}" "{install_escaped}" /E /R:2 /W:2 /NFL /NDL /NJH /NJS\n'
-        f'start "" "{install_escaped}\\DataHub.exe"\n'
-        "del \"%~f0\"\n"
+        'set "LOG=%LOCALAPPDATA%\\DataHub\\' + UPDATE_LOG + '"\n'
+        'echo [%DATE% %TIME%] === UPDATE INICIADO p/ {EXP} === >> "%LOG%"\n'
+        'echo install_dir={INSTALL} >> "%LOG%"\n'
+        'echo src={SRC} >> "%LOG%"\n'
+        ":kill\n"
+        'taskkill /F /IM DataHub.exe /T >> "%LOG%" 2>&1\n'
+        "timeout /t 3 /nobreak >nul\n"
+        'set "OK=0"\n'
+        "for /L %%i in (1,1,3) do (\n"
+        '  echo [%DATE% %TIME%] robocopy tentativa %%i >> "%LOG%"\n'
+        '  robocopy "{SRC}" "{INSTALL}" /E /R:5 /W:3 /NFL /NDL /NJS >> "%LOG%" 2>&1\n'
+        '  set "GOT="\n'
+        '  for /f "usebackq delims=" %%v in (`type "{INSTALL}\\version.txt" 2^>nul`) do set "GOT=%%v"\n'
+        '  set "GOT=%GOT: =%"\n'
+        '  if "%GOT%"=="{EXP}" (\n'
+        '    echo [%DATE% %TIME%] VERSAO CONFERE: %GOT% >> "%LOG%"\n'
+        "    goto done\n"
+        "  )\n"
+        '  echo [%DATE% %TIME%] tentativa %%i: versao instalada=%GOT% (esperado {EXP}) >> "%LOG%"\n'
+        ")\n"
+        'echo [%DATE% %TIME%] FALHA: versao nao confere apos 3 tentativas >> "%LOG%"\n'
+        'echo {EXP} > "%LOCALAPPDATA%\\DataHub\\' + UPDATE_FAILED_FLAG + '"\n'
+        "goto end\n"
+        ":done\n"
+        'echo [%DATE% %TIME%] SUCESSO >> "%LOG%"\n'
+        'if exist "%LOCALAPPDATA%\\DataHub\\' + UPDATE_FAILED_FLAG + '" del "%LOCALAPPDATA%\\DataHub\\' + UPDATE_FAILED_FLAG + '"\n'
+        'start "" "{INSTALL}\\DataHub.exe"\n'
+        ":end\n"
+        'del "%~f0"\n'
     )
+    bat_text = (
+        bat_text.replace("{INSTALL}", install_escaped)
+        .replace("{SRC}", src_escaped)
+        .replace("{EXP}", exp)
+    )
+
+    bat = tmp / "update.bat"
     bat.write_text(bat_text, encoding="utf-8")
     return str(bat)
 
 
 def launch_updater(bat_path):
-    """Dispara o updater em processo separado e encerra o app atual."""
+    """Dispara o updater em processo separado e encerra o app atual.
+
+    O .bat (gerado em prepare_update) e quem encerra de verdade o app, copia e
+    relanca — assim a ordem nunca troca (app morto ANTES da copia).
+    """
     subprocess.Popen(
         ["cmd.exe", "/c", bat_path],
         shell=False,
