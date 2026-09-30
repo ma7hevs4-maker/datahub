@@ -37,6 +37,7 @@ class ConfigWindow(tk.Toplevel):
 
         self._aba_geonline(nb)
         self._aba_geral(nb)
+        self._aba_operview(nb)
         self._aba_atualizacao(nb)
 
         frame_btn = ttk.Frame(self)
@@ -95,6 +96,47 @@ class ConfigWindow(tk.Toplevel):
         ttk.Entry(frm, textvariable=v_n8n, width=45).grid(row=3, column=1, padx=(10, 0), pady=(12, 4))
 
         self._toggle_sp()
+
+    # ── Operview (origem + gravação do login) ──────────────────────────────────
+
+    def _aba_operview(self, nb):
+        frm = ttk.Frame(nb, padding=15)
+        nb.add(frm, text="Operview")
+
+        campos = [
+            ("URL", "op_url"),
+            ("Login", "op_login"),
+            ("Senha", "op_senha"),
+        ]
+        for i, (label, key) in enumerate(campos):
+            ttk.Label(frm, text=label).grid(row=i, column=0, sticky="w", pady=4)
+            var = tk.StringVar()
+            show = "*" if key == "op_senha" else ""
+            ttk.Entry(frm, textvariable=var, width=45, show=show).grid(
+                row=i, column=1, padx=(10, 0), pady=4)
+            self._vars[key] = var
+
+        ttk.Button(
+            frm, text="🎬 Gravar login (clique na conta e na senha)",
+            command=self._gravar_login,
+        ).grid(row=3, column=0, columnspan=2, pady=12, sticky="w")
+        ttk.Label(
+            frm,
+            text=("Abre o Operview, clique na conta salva e no campo de senha,\n"
+                  "depois Confirme na janela que abrir. Salva login_posicoes.txt no Desktop."),
+            foreground="#5b6b7b",
+        ).grid(row=4, column=0, columnspan=2, sticky="w")
+
+    def _gravar_login(self):
+        from core.downloader.operview import gravar_login_operview
+        # reflete o que está na tela no cfg antes de gravar
+        self._cfg.operview.url = self._vars["op_url"].get().strip()
+        self._cfg.operview.login = self._vars["op_login"].get().strip()
+        self._cfg.operview.senha = self._vars["op_senha"].get().strip()
+        try:
+            gravar_login_operview(parent=self, cfg=self._cfg.operview)
+        except Exception as e:  # noqa: BLE001
+            messagebox.showerror("Erro na gravação", str(e), parent=self)
 
     # ── Atualização (GitHub) ─────────────────────────────────────────────────
 
@@ -165,6 +207,9 @@ class ConfigWindow(tk.Toplevel):
         self._vars["geo_conta"].set(cfg.geonline.conta)
         self._vars["geo_login"].set(cfg.geonline.login)
         self._vars["geo_senha"].set(cfg.geonline.senha)
+        self._vars["op_url"].set(cfg.operview.url)
+        self._vars["op_login"].set(cfg.operview.login)
+        self._vars["op_senha"].set(cfg.operview.senha)
         self._vars["pasta_local"].set(cfg.pasta_local)
         self._vars["sp_enabled"].set(cfg.sharepoint.enabled)
         self._vars["sp_pasta"].set(cfg.sharepoint.pasta)
@@ -177,6 +222,9 @@ class ConfigWindow(tk.Toplevel):
         cfg.geonline.conta = self._vars["geo_conta"].get().strip()
         cfg.geonline.login = self._vars["geo_login"].get().strip()
         cfg.geonline.senha = self._vars["geo_senha"].get().strip()
+        cfg.operview.url   = self._vars["op_url"].get().strip()
+        cfg.operview.login = self._vars["op_login"].get().strip()
+        cfg.operview.senha = self._vars["op_senha"].get().strip()
         cfg.pasta_local    = self._vars["pasta_local"].get().strip()
         cfg.sharepoint.enabled = self._vars["sp_enabled"].get()
         cfg.sharepoint.pasta   = self._vars["sp_pasta"].get().strip()

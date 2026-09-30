@@ -96,6 +96,7 @@ class App:
         token = self._cancelado
 
         def fluxo():
+            self._window.set_rodando(True)
             if token.is_set():
                 return
             # Recalcula datas a cada iteração para detectar virada de dia
@@ -330,6 +331,6 @@ if __name__ == "__main__":
         from config import load_config
         from core.downloader.operview import gravar_login_operview
         _cfg = load_config()
-        gravar_login_operview(print, _cfg.operview)
+        gravar_login_operview(cfg=_cfg.operview, log_fn=print)
         sys.exit(0)
     App().run()

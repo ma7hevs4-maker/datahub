@@ -383,7 +383,7 @@ def _precisa_login(driver) -> bool:
 #   passo 2: senha       →  input[name=passwd]   / #i0118  + botão #idSIButton9
 #   passo 3 (opcional):  "Continuar conectado?"           + botão #idSIButton9
 _SEL_EMAIL = "input[name='loginfmt'], #i0116, input[type=email]"
-_SEL_SENHA = "input[name='passwd'], #i0118"
+_SEL_SENHA = "input[name='passwd'], #i0118, input[type=password]"
 _DOMINIOS_MS = ("login.microsoftonline.com", "login.microsoft.com",
                 "login.live.com", "login.windows.net", "sts.windows.net")
 
@@ -515,39 +515,54 @@ def _enviar_form_ms(driver, campo, seletor_campo, log_fn=print, timeout=5) -> bo
 
 
 def _clicar_tile_conta(driver, login, log_fn=print) -> bool:
-    """Na tela 'Escolher conta' da Microsoft, clica o tile da conta salva para
-    revelar o campo de senha. O e-mail no tile vem MASKED (ex.: jo**@empresa.com),
-    então não dá pra confiar no match de texto completo: tenta o e-mail e, se não
-    achar, clica o PRIMEIRO tile visível que não seja 'Usar outra conta'.
+    """Na tela 'Escolher conta' da Microsoft, clica o TILE da conta salva (o
+    elemento clicável de fato) e não algum outro elemento que por acaso contenha
+    o e-mail (cabeçalho, label, etc.). Era isso que fazia o campo de senha não
+    aparecer: o clique caía num elemento errado e a conta não era selecionada.
 
-    Sem isso o fluxo travava: o app achava a conta mas nunca clicava no tile,
-    o campo de senha não aparecia e ele aguardava o usuário manualmente.
+    Estratégia: procura DENTRO dos tiles (.row.tile / [role=listitem]) pelo e-mail
+    (completo -> parte antes do @ -> domínio, p/ cobrir e-mail mascarado) e clica
+    o próprio tile. Fallback: primeiro tile visível que não seja 'outra conta'.
     """
-    # 1) match direto pelo e-mail (completo ou parte antes do @)
-    if login:
-        alvos = [login]
-        if "@" in login:
-            alvos.append(login.split("@", 1)[0])
-        for alvo in alvos:
-            try:
-                el = _achar_por_texto(driver, alvo)
-                if el is not None:
-                    _mouse_clicar(driver, *_coords_viewport(driver, el))
-                    log_fn(f"  🖱️  tile da conta clicado (match '{alvo}').")
-                    time.sleep(2)
-                    return True
-            except Exception:
-                continue
-    # 2) fallback: primeiro tile '.row.tile' visível, exceto 'outra conta'
-    try:
-        for el in driver.find_elements(By.CSS_SELECTOR, ".row.tile"):
+    def _tiles():
+        return driver.find_elements(
+            By.CSS_SELECTOR, ".row.tile, [role='listitem'], div.list-item, .tile")
+
+    def _tile_com_texto(txt):
+        txt = (txt or "").lower()
+        for el in _tiles():
             try:
                 if not el.is_displayed():
                     continue
-                txt = (el.text or "").lower()
-                if any(p in txt for p in ("outra conta", "another account",
-                                          "other account", "use another",
-                                          "usar outra")):
+                if txt and txt in (el.text or "").lower():
+                    return el
+            except Exception:
+                continue
+        return None
+
+    if login:
+        alvos = [login.lower()]
+        if "@" in login:
+            alvos.append(login.split("@", 1)[0].lower())
+            alvos.append(("@" + login.split("@", 1)[1]).lower())  # domínio
+        for alvo in alvos:
+            el = _tile_com_texto(alvo)
+            if el is not None:
+                _mouse_clicar(driver, *_coords_viewport(driver, el))
+                log_fn(f"  🖱️  tile da conta clicado (match '{alvo}').")
+                time.sleep(2)
+                return True
+
+    # fallback: primeiro tile visível que não seja 'outra conta'
+    try:
+        for el in _tiles():
+            try:
+                if not el.is_displayed():
+                    continue
+                t = (el.text or "").lower()
+                if any(p in t for p in ("outra conta", "another account",
+                                       "other account", "use another",
+                                       "usar outra")):
                     continue
                 _mouse_clicar(driver, *_coords_viewport(driver, el))
                 log_fn("  🖱️  tile da conta clicado (fallback: primeiro tile).")
@@ -708,114 +723,145 @@ def _salvar_registros(registros, out_txt):
     out_txt.write_text("\n".join(linhas), encoding="utf-8", errors="ignore")
 
 
-def gravar_login_operview(log_fn=print, cfg=None):
+def gravar_login_operview(parent=None, log_fn=print, cfg=None):
     """Abre o login do Operview num Chrome visível e grava onde o usuário clica
     (conta salva + campo de senha), salvando login_posicoes.txt e o HTML da tela
     no Desktop, para o desenvolvedor ajustar o mecanismo de login com precisão.
 
-    Uso: DataHub.exe --gravar-login  (feche o DataHub antes de rodar).
+    Pode ser chamado por um botão da GUI (parent = janela) ou via linha de
+    comando (DataHub.exe --gravar-login). O usuário clica na conta e no campo
+    de senha no navegador e depois confirma na própria janela de gravação.
     """
+    import threading
+    import tkinter as tk
+    from tkinter import ttk, messagebox
     from pathlib import Path as _P
-    try:
-        from PyQt6.QtWidgets import QApplication, QMessageBox
-    except Exception:
-        QApplication = None
+
     desktop = _P.home() / "Desktop"
     try:
         desktop.mkdir(exist_ok=True)
     except Exception:
         desktop = _P.cwd()
-    app_qt = None
-    if QApplication is not None:
-        try:
-            app_qt = QApplication([])
-        except Exception:
-            app_qt = None
 
-    def avisar(msg, titulo="DataHub — Gravação de login"):
-        if app_qt is not None:
+    estado = {"driver": None, "pronto": threading.Event(), "erro": [None]}
+
+    def _abrir():
+        try:
+            d = _criar_driver(str(desktop), headless=False, perfil=_PERFIL_OPERViEW)
+            url = (cfg.url if cfg else None) or URL_PADRAO
+            d.get(url)
+            time.sleep(3)
+            if not _esta_ms_login(d):
+                # Força re-autenticação mantendo a conta salva no picker do perfil.
+                try:
+                    d.get("https://login.microsoftonline.com/")
+                    time.sleep(2)
+                    d.delete_all_cookies()
+                except Exception:
+                    pass
+                d.get(url)
+                time.sleep(4)
+            d.execute_script(_CAPTURA_GRAVACAO_JS)
             try:
-                QMessageBox.information(None, titulo, msg)
-                return
+                d.execute_cdp_cmd("Page.addScriptToEvaluateOnNewDocument",
+                                  {"source": _CAPTURA_GRAVACAO_JS})
             except Exception:
                 pass
-        log_fn(msg)
+            estado["driver"] = d
+        except Exception as e:  # noqa: BLE001
+            estado["erro"][0] = e
+        finally:
+            estado["pronto"].set()
 
-    avisar(
-        "MODO GRAVAÇÃO DO LOGIN DO OPERVIEW\n\n"
-        "1) Clique na sua CONTA salva (o tile da conta).\n"
-        "2) Quando o campo de SENHA aparecer, clique nele.\n"
-        "3) (opcional) clique no botão ENTRAR.\n\n"
-        "As posições serão salvas em 'login_posicoes.txt' no seu Desktop."
-    )
+    threading.Thread(target=_abrir, daemon=True).start()
 
-    pasta_dl = str(desktop)
-    driver = None
-    registros = []
-    try:
-        driver = _criar_driver(pasta_dl, headless=False, perfil=_PERFIL_OPERViEW)
-        url = (cfg.url if cfg else None) or URL_PADRAO
-        driver.get(url)
-        time.sleep(3)
-        if not _esta_ms_login(driver):
-            # Força re-autenticação mantendo a conta salva no picker do perfil.
-            try:
-                driver.get("https://login.microsoftonline.com/")
-                time.sleep(2)
-                driver.delete_all_cookies()
-            except Exception:
-                pass
-            driver.get(url)
-            time.sleep(4)
-        driver.execute_script(_CAPTURA_GRAVACAO_JS)
+    owner = parent if isinstance(parent, (tk.Tk, tk.Toplevel)) else None
+    raiz = owner if owner is not None else tk.Tk()
+    dlg = tk.Toplevel(raiz) if owner is not None else raiz
+    dlg.title("Gravar login do Operview")
+    dlg.resizable(False, False)
+    if owner is not None:
+        dlg.transient(owner)
+    var = tk.StringVar(value="Abrindo o navegador e preparando a captura...")
+    ttk.Label(dlg, textvariable=var, wraplength=430, justify="left").pack(padx=14, pady=12)
+    ttk.Label(
+        dlg,
+        text=("1) No navegador que abriu, clique na CONTA salva.\n"
+              "2) Quando o campo de SENHA aparecer, clique nele.\n"
+              "3) Volte aqui e clique em 'Confirmar gravação'."),
+        justify="left",
+    ).pack(padx=14)
+    bf = ttk.Frame(dlg)
+    bf.pack(pady=12)
+    bconf = ttk.Button(bf, text="Confirmar gravação", state="disabled")
+    bconf.pack(side="left", padx=6)
+    bcanc = ttk.Button(bf, text="Cancelar")
+    bcanc.pack(side="left", padx=6)
+
+    def _finalizar(salvar):
+        d = estado["driver"]
         try:
-            driver.execute_cdp_cmd("Page.addScriptToEvaluateOnNewDocument",
-                                   {"source": _CAPTURA_GRAVACAO_JS})
-        except Exception:
-            pass
+            if salvar and d is not None:
+                arr = (d.execute_script("var a=window.__login_rec||[];return a;") or [])
+                if not arr:
+                    messagebox.showwarning(
+                        "DataHub", "Nenhum clique foi capturado. Nada foi salvo.",
+                        parent=dlg)
+                else:
+                    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+                    out_txt = desktop / "login_posicoes.txt"
+                    out_html = desktop / f"login_posicoes_pagina_{ts}.html"
+                    _salvar_registros(arr, out_txt)
+                    try:
+                        out_html.write_text(
+                            f"<!-- URL: {d.current_url} -->\n" + (d.page_source or ""),
+                            encoding="utf-8", errors="ignore")
+                    except Exception:
+                        pass
+                    messagebox.showinfo(
+                        "DataHub",
+                        f"Gravação concluída!\n\n{out_txt}\n\n"
+                        f"Envie esse arquivo (e o .html) para o desenvolvedor.\n\n"
+                        f"Cliques gravados: {len(arr)}",
+                        parent=dlg)
+            elif not salvar:
+                messagebox.showinfo(
+                    "DataHub", "Gravação cancelada. Nada foi salvo.", parent=dlg)
+        finally:
+            if d is not None:
+                try:
+                    d.quit()
+                except Exception:
+                    pass
+        dlg.destroy()
 
-        passos = [
-            ("conta salva", 120),
-            ("campo de senha", 120),
-            ("botão entrar (opcional)", 25),
-        ]
-        for i, (nome, tout) in enumerate(passos):
-            log_fn(f"  🎬 Aguardando clique: {nome} (até {tout}s)...")
-            clip = _aguardar_clique(driver, tout)
-            if clip is None:
-                if i < 2:
-                    log_fn(f"  ⚠️  Nenhum clique capturado para '{nome}'.")
-                    break
-                log_fn("  (botão entrar não gravado — ok, opcional)")
-                break
-            registros.append(clip)
-            log_fn(f"  ✅ Capturado '{nome}': tag={clip.get('tag')} id={clip.get('id')} "
-                   f"name={clip.get('name')} type={clip.get('type')}")
+    def _conf():
+        _finalizar(True)
 
-        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-        out_txt = desktop / "login_posicoes.txt"
-        out_html = desktop / f"login_posicoes_pagina_{ts}.html"
-        _salvar_registros(registros, out_txt)
-        try:
-            out_html.write_text(
-                f"<!-- URL: {driver.current_url} -->\n" + (driver.page_source or ""),
-                encoding="utf-8", errors="ignore")
-        except Exception:
-            pass
-        avisar(
-            f"Gravação concluída!\n\nArquivo: {out_txt}\n\n"
-            f"Envie 'login_posicoes.txt' (e o .html) para o desenvolvedor.\n\n"
-            f"Cliques gravados: {len(registros)}"
-        )
-    except Exception as e:
-        log_fn(f"  ❌ Erro na gravação: {e}")
-        avisar(f"Erro na gravação:\n{e}")
-    finally:
-        if driver is not None:
-            try:
-                driver.quit()
-            except Exception:
-                pass
+    def _canc():
+        _finalizar(False)
+
+    bconf.configure(command=_conf)
+    bcanc.configure(command=_canc)
+
+    def _checar():
+        if estado["pronto"].is_set():
+            if estado["erro"][0] is not None:
+                var.set("Erro ao abrir o navegador:\n" + str(estado["erro"][0]) +
+                        "\n\nFeche o DataHub se ele estiver aberto e tente de novo.")
+            else:
+                var.set("Navegador pronto. Clique na conta e no campo de senha e "
+                        "depois 'Confirmar'.")
+                bconf.configure(state="normal")
+        else:
+            dlg.after(300, _checar)
+
+    _checar()
+
+    if owner is not None:
+        dlg.wait_window(dlg)
+    else:
+        raiz.mainloop()
 
 
 def tentar_login_automatico(driver, cfg: OperviewConfig, log_fn=print) -> bool:
@@ -848,7 +894,7 @@ def tentar_login_automatico(driver, cfg: OperviewConfig, log_fn=print) -> bool:
             _clicar_tile_conta(driver, login, log_fn)
             campo = _ms_campo(driver, _SEL_EMAIL, timeout=15)
             if campo is None:
-                campo = _ms_campo(driver, _SEL_SENHA, timeout=8)
+                campo = _ms_campo(driver, _SEL_SENHA, timeout=15)
             if campo is None:
                 # sem campo após clicar o tile → confirma entrada (SSO parcial)
                 log_fn("  🔁 Sem campo de e-mail — confirmando entrada (sessão MS parcial? serviços de SSO).")

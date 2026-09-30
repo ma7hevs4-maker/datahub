@@ -383,6 +383,7 @@ class MainWindow(QMainWindow):
         self._on_executar = on_executar
         self._on_parar = on_parar
         self._on_tratar = on_tratar
+        self._rodando = False
 
         self._tema = _dark_theme()
         self._accent = self._tema["accent"]
@@ -403,6 +404,10 @@ class MainWindow(QMainWindow):
         self._build()
 
         QTimer.singleShot(4000, self._checar_update_automatico)
+        # Reconfere periodicamente p/ pegar novas versões sem precisar reiniciar o app.
+        self._update_timer = QTimer(self)
+        self._update_timer.timeout.connect(self._checar_update_automatico)
+        self._update_timer.start(30 * 60 * 1000)  # a cada 30 min
 
     # ── Montagem ──────────────────────────────────────────────────────────────
 
@@ -1111,18 +1116,37 @@ class MainWindow(QMainWindow):
 
         threading.Thread(target=_worker, daemon=True).start()
 
+    def _baixar_e_aplicar(self, url, tag):
+        """Baixa e aplica a atualização (encerra este app e relança o novo)."""
+        try:
+            self._update_status.setText(f"Baixando e atualizando para {tag}...")
+            self._app.processEvents()
+            bat = prepare_update(url, progress=None)
+        except Exception as e:  # noqa: BLE001
+            self._update_status.setText(f"Falha ao baixar atualização: {e}")
+            return
+        launch_updater(bat)
+
     def _on_update_check(self, res):
         if res is None:
             return
         tag, url = res
         try:
-            self._update_status.setText(f"Nova versão {tag} disponível!")
             self._tray.showMessage(
                 "DataHub",
-                f"Nova versão {tag} disponível. Abra Atualização (GitHub) para baixar.",
-                QSystemTrayIcon.MessageIcon.Information, 8000)
+                f"Nova versão {tag} disponível — atualizando...",
+                QSystemTrayIcon.MessageIcon.Information, 6000)
         except Exception:
             pass
+        # Não interrompe um job de 60 min em andamento; aplica quando ocioso.
+        if self._rodando:
+            self._update_status.setText(
+                f"Nova versão {tag} disponível (vai atualizar ao fim do job atual).")
+            return
+        self._update_status.setText(f"Atualizando para {tag}...")
+        threading.Thread(
+            target=self._baixar_e_aplicar, args=(url, tag), daemon=True
+        ).start()
 
     # ── Log público (thread-safe) ──────────────────────────────────────────────
 
@@ -1143,6 +1167,7 @@ class MainWindow(QMainWindow):
         self.rodando_signal.emit(rodando)
 
     def _set_rodando(self, rodando: bool):
+        self._rodando = rodando
         self._btn_executar.setEnabled(not rodando)
         self._btn_parar.setEnabled(rodando)
 
