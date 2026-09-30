@@ -1,11 +1,11 @@
 [Setup]
 AppName=DataHub
-AppVersion=1.2.12
+AppVersion=1.2.13
 AppPublisher=DataHub
 DefaultDirName={localappdata}\DataHub
 DefaultGroupName=DataHub
 OutputDir=C:\Users\BR0163806927\Downloads\Agente I.A\datahub_v2\dist
-OutputBaseFilename=DataHub-1.2.12-Setup
+OutputBaseFilename=DataHub-1.2.13-Setup
 Compression=lzma2
 SolidCompression=yes
 PrivilegesRequired=lowest
@@ -23,7 +23,10 @@ DisableProgramGroupPage=auto
 [Messages]
 ; textos em portugues (fallback english se faltar)
 WelcomeLabel1= Bem-vindo ao Assistente de Instalação do DataHub
-WizardFinished= O DataHub foi instalado com sucesso!
+
+[InstallDelete]
+; limpa flag obsoleta de falha de update para nao avisar a toa apos reinstalar
+Type: files; Name: "{localappdata}\DataHub\update_failed.flag"
 
 [Files]
 Source: C:\Users\BR0163806927\Downloads\Agente I.A\datahub_v2\dist\DataHub\*; DestDir: {app}; Flags: ignoreversion recursesubdirs createallsubdirs

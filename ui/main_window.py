@@ -36,7 +36,7 @@ from config import AppConfig, save_config
 try:
     from core.updater import (
         local_version, check_for_update, REPO,
-        prepare_update, launch_updater, is_installed,
+        prepare_update, launch_updater, is_installed, parse_version,
     )
 except Exception:
     local_version = lambda: "?"
@@ -1171,8 +1171,9 @@ class MainWindow(QMainWindow):
     def _checar_falha_update(self):
         """Avisa se um update.bat anterior falhou (versao nao bateu apos copiar).
 
-        Falso positivo: se o app ja esta na versao que a flag diz ter falhado,
-        a copia deu certo (a checagem antiga lia o version.txt errado). Nesse
+        Falso positivo / flag antiga: se o app ja esta numa versao >= a que a
+        flag diz ter falhado, a copia deu certo (a checagem antiga lia o
+        version.txt errado) ou a flag e de uma tentativa mais antiga. Nesse
         caso apaga a flag silenciosamente, sem avisar.
         """
         try:
@@ -1189,7 +1190,14 @@ class MainWindow(QMainWindow):
                 atual = local_version()
             except Exception:
                 atual = ""
-            if versao and atual and versao == atual:
+            # limpa flag se ja estamos na versao da flag ou acima (ou dados invalidos)
+            try:
+                limpar = bool(atual) and bool(versao) and parse_version(atual) >= parse_version(versao)
+            except Exception:
+                limpar = True
+            if not versao or not atual:
+                limpar = True
+            if limpar:
                 return
             QMessageBox.warning(
                 self, "Atualização falhou",

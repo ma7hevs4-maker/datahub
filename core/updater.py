@@ -299,13 +299,35 @@ def prepare_update(download_url, progress=None, expected_version=None):
         "    set OK=1\n"
         "    goto done\n"
         "  )\n"
+        '  echo [%DATE% %TIME%] copia nao confirmada, tentando mover instalacao antiga >> "!LOG!"\n'
+        '  set "GOT2="\n'
+        '  if exist "{INSTALL}" (\n'
+        '    if exist "{INSTALL}.old" rmdir /S /Q "{INSTALL}.old" >> "!LOG!" 2>&1\n'
+        '    move /Y "{INSTALL}" "{INSTALL}.old" >> "!LOG!" 2>&1\n'
+        "  )\n"
+        '  robocopy "{SRC}" "{INSTALL}" /E /R:10 /W:5 /NFL /NDL /NJS >> "!LOG!" 2>&1\n'
+        '  if exist "{INSTALL}\\_internal\\version.txt" (\n'
+        '    for /f "usebackq delims=" %%v in (`type "{INSTALL}\\_internal\\version.txt"`) do set "GOT2=%%v"\n'
+        "  )\n"
+        '  if not defined GOT2 if exist "{INSTALL}\\version.txt" (\n'
+        '    for /f "usebackq delims=" %%v in (`type "{INSTALL}\\version.txt"`) do set "GOT2=%%v"\n'
+        "  )\n"
+        '  set "GOT2=!GOT2: =!"\n'
+        '  echo [%DATE% %TIME%] apos mover: versao="!GOT2!" >> "!LOG!"\n'
+        '  if "!GOT2!"=="{EXP}" (\n'
+        '    echo [%DATE% %TIME%] VERSAO CONFERE (apos mover) >> "!LOG!"\n'
+        '    if exist "!FLAG!" del "!FLAG!"\n'
+        "    set OK=1\n"
+        "    goto done\n"
+        "  )\n"
         "  timeout /t 3 /nobreak >nul\n"
         ")\n"
         ":done\n"
         'if "!OK!"=="0" (\n'
         '  echo [%DATE% %TIME%] AVISO: copia nao confirmada (arquivo em uso?) >> "!LOG!"\n'
-        '  echo {EXP} > "!FLAG!"\n'
+        '  > "!FLAG!" echo {EXP}\n'
         ")\n"
+        'if exist "{INSTALL}.old" rmdir /S /Q "{INSTALL}.old" >> "!LOG!" 2>&1\n'
         'echo [%DATE% %TIME%] RELIGANDO APP >> "!LOG!"\n'
         'start "" "{INSTALL}\\DataHub.exe"\n'
         'del "%~f0"\n'
