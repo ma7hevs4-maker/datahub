@@ -777,6 +777,13 @@ class MainWindow(QMainWindow):
             self._vars_cfg[key] = var
             row.addWidget(var, stretch=1)
             op.addLayout(row)
+        btn_gravar = QPushButton("🎯  Gravar login (clique na conta e na senha)")
+        btn_gravar.setToolTip(
+            "Abre o Operview e grava onde voce clica (conta + campo de senha). "
+            "Salva login_posicoes.txt e o HTML da tela na Area de Trabalho para o "
+            "desenvolvedor ajustar o login automatico.")
+        btn_gravar.clicked.connect(self._gravar_login)
+        op.addWidget(btn_gravar)
         v.addWidget(self._card(opv))
 
         apar = QWidget()
@@ -870,6 +877,15 @@ class MainWindow(QMainWindow):
 
         self._carregar_config()
         return page
+
+    def _gravar_login(self):
+        """Abre o gravador de login do Operview em processo separado
+        (DataHub.exe --gravar-login) para nao conflitar com o loop do PyQt."""
+        import subprocess, sys
+        try:
+            subprocess.Popen([sys.executable, "--gravar-login"])
+        except Exception as e:  # noqa: BLE001
+            print(f"❌ Nao foi possivel abrir o gravador de login: {e}")
 
     def _aplicar_tema(self, claro: bool = False):
         self._claro = bool(claro)
