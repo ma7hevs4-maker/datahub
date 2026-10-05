@@ -202,7 +202,7 @@ table.dt tr.team-row td:nth-child(1){font-weight:600}
       <div class="seghead"><span class="dot" style="background:#466067"></span>Backlog<span class="block-hint">clique nas barras/KPIs/Top 10 para detalhar</span></div>
     <div class="filters" id="f-bk1"></div>
     <div class="grid">
-      <div class="card"><h3>Backlog (dia anterior × dia atual) — em aberto por hora</h3><canvas id="cb1-1"></canvas></div>
+      <div class="card"><h3>Backlog (dias anteriores × dia anterior × dia atual) — em aberto por hora</h3><canvas id="cb1-1"></canvas></div>
       <div class="card"><h3>Backlog por Hora (em aberto ao final da hora)</h3><canvas id="b1-1"></canvas></div>
     </div>
   </section>
@@ -382,7 +382,7 @@ table.dt tr.team-row td:nth-child(1){font-weight:600}
     <div class="seghead"><span class="dot" style="background:#466067"></span>Backlog<span class="block-hint">clique nas barras/KPIs/Top 10 para detalhar</span></div>
       <div class="filters" id="f-bk3"></div>
       <div class="grid">
-        <div class="card"><h3>Backlog (carreamento dia a dia) — em aberto no fim do dia</h3><canvas id="d3-m1-4"></canvas></div>
+        <div class="card"><h3>Backlog (carreamento dia a dia: dias anteriores × dia anterior × dia atual) — em aberto no fim do dia</h3><canvas id="d3-m1-4"></canvas></div>
         <div class="card"><h3>Backlog (carreamento) por Hora — média do período</h3><canvas id="d3-m1-5"></canvas></div>
       </div>
     </section>
@@ -1778,6 +1778,7 @@ function buildCarry1(base){
   const LH=(dia.length===1)?lastHourOfDate(base,curK):23;
   const atual=base.filter(r=>entKey(r)===curK);
   const ant=base.filter(r=>entKey(r)===antK);
+  const old=base.filter(r=>{const k=entKey(r);return k!==''&&dateVal(k)<dateVal(antK);});
   const openSai=(r,H)=>{
     if(r.s==='Aberto') return true;
     const sk=saiKey(r);
@@ -1788,15 +1789,19 @@ function buildCarry1(base){
   };
   const openAtu=(r,H)=>{const he=parseInt(r.he,10);if(!Number.isFinite(he)||he>H)return false;return openSai(r,H);};
   const openAnt=(r,H)=>openSai(r,H);
+  const openOld=(r,H)=>openSai(r,H);
   const antH=HOUR_LAB.map((h,i)=>ant.filter(r=>openAnt(r,i)).length);
   const atuH=HOUR_LAB.map((h,i)=>atual.filter(r=>openAtu(r,i)).length);
+  const oldH=HOUR_LAB.map((h,i)=>old.filter(r=>openOld(r,i)).length);
   const antC=antH.map((v,i)=>i<=LH?v:0);
   const atuC=atuH.map((v,i)=>i<=LH?v:0);
+  const oldC=oldH.map((v,i)=>i<=LH?v:0);
   barWithMeans('cb1-1',HOUR_LAB,[
+    {label:'Backlog dias anteriores',backgroundColor:'#7bbda1',data:oldC},
     {label:'Backlog dia anterior',backgroundColor:'#34baab',data:antC},
     {label:'Backlog dia atual',backgroundColor:'#466067',data:atuC},
-  ],{stacked:true,redLabel:false,meanLines:[{value:mean(antC),color:'#34baab'},{value:mean(atuC),color:'#466067'}]},
-    i=>{if(i>LH)return[[],[]];return[ant.filter(r=>openAnt(r,i)),atual.filter(r=>openAtu(r,i))];});
+  ],{stacked:true,redLabel:false,meanLines:[{value:mean(oldC),color:'#7bbda1'},{value:mean(antC),color:'#34baab'},{value:mean(atuC),color:'#466067'}]},
+    i=>{if(i>LH)return[[],[],[]];return[old.filter(r=>openOld(r,i)),ant.filter(r=>openAnt(r,i)),atual.filter(r=>openAtu(r,i))];});
 }
 
 // ---- Dashboard 3 - Entrada & Saída (visão de período) ----
@@ -1873,22 +1878,28 @@ function buildCarryD3(base){
   const keys=Object.keys(dm).sort((a,b)=>{const A=dm[a],B=dm[b];return(A.mes-B.mes)||(A.d-B.d);});
   const labels=keys.map(k=>String(dm[k].d)+'/'+String(dm[k].mes));
   if(!labels.length) labels.push('—');
+  const oldByLabel={};
+  labels.forEach(k=>{const oks=Object.keys(entGroups).filter(kk=>kk!==''&&dateVal(kk)<dateVal(prevDayKey(k)));oldByLabel[k]=oks.reduce((a,kk)=>a.concat(entGroups[kk]||[]),[]);});
   const perDay={};
   labels.forEach(k=>{
     const ant=entGroups[prevDayKey(k)]||[];
     const atu=entGroups[k]||[];
+    const old=oldByLabel[k];
     const antH=HOUR_LAB.map((_,h)=>ant.filter(r=>_openAnt(r,h,k)).length);
     const atuH=HOUR_LAB.map((_,h)=>atu.filter(r=>_openAtu(r,h,k)).length);
-    perDay[k]={antH,atuH};
+    const oldH=HOUR_LAB.map((_,h)=>old.filter(r=>_openAnt(r,h,k)).length);
+    perDay[k]={antH,atuH,oldH};
   });
   // m1-4: carreamento por DIA (valor no fim do dia = hora 23)
   const carryD=labels.map(k=>perDay[k].antH[23]);
   const openD=labels.map(k=>perDay[k].atuH[23]);
+  const oldD=labels.map(k=>perDay[k].oldH[23]);
   barWithMeans('m1-4',labels,[
+    {label:'Backlog dias anteriores',backgroundColor:'#7bbda1',data:oldD},
     {label:'Backlog dia anterior',backgroundColor:'#34baab',data:carryD},
     {label:'Backlog dia atual',backgroundColor:'#466067',data:openD},
-  ],{stacked:true,meanLines:[{value:mean(carryD),color:'#34baab'},{value:mean(openD),color:'#466067'}]},
-    i=>[ (entGroups[prevDayKey(labels[i])]||[]).filter(r=>_openAnt(r,23,labels[i])), (entGroups[labels[i]]||[]).filter(r=>_openAtu(r,23,labels[i])) ]);
+  ],{stacked:true,meanLines:[{value:mean(oldD),color:'#7bbda1'},{value:mean(carryD),color:'#34baab'},{value:mean(openD),color:'#466067'}]},
+    i=>[ oldByLabel[labels[i]].filter(r=>_openAnt(r,23,labels[i])), (entGroups[prevDayKey(labels[i])]||[]).filter(r=>_openAnt(r,23,labels[i])), (entGroups[labels[i]]||[]).filter(r=>_openAtu(r,23,labels[i])) ]);
   // m1-5: carreamento por HORA — média do período
   const avgAnt=HOUR_LAB.map((_,h)=>mean(labels.map(k=>perDay[k].antH[h])));
   const avgAtu=HOUR_LAB.map((_,h)=>mean(labels.map(k=>perDay[k].atuH[h])));

@@ -86,7 +86,7 @@ class App:
 
     # ── Controle do scheduler ─────────────────────────────────────────────────
 
-    def _iniciar(self, selecionados: dict, data_ini: datetime, data_fim: datetime,
+    def _iniciar(self, selecionados: list, data_ini: datetime, data_fim: datetime,
                  modo: str, polo: str = "Todos os polos"):
         if self._scheduler and self._scheduler.rodando:
             self._scheduler.stop()
@@ -142,7 +142,37 @@ class App:
 
     # ── Fluxo principal ───────────────────────────────────────────────────────
 
-    def _executar_fluxo(self, selecionados: dict, data_ini: datetime, data_fim: datetime,
+    def _salvar_xlsx_seguro(self, df, saida: Path, log_fn=print):
+        for attempt in range(6):
+            try:
+                tmp = saida.with_suffix(".tmp_%d.xlsx" % attempt)
+                df.to_excel(str(tmp), index=False)
+                try:
+                    os.replace(str(tmp), str(saida))
+                except OSError:
+                    shutil.copy2(str(tmp), str(saida))
+                if tmp.exists():
+                    try:
+                        tmp.unlink()
+                    except OSError:
+                        pass
+                log_fn(f"  💾 Salvo: {saida} ({len(df)} linhas)")
+                return
+            except (OSError, PermissionError) as e:
+                try:
+                    if tmp.exists():
+                        tmp.unlink()
+                except OSError:
+                    pass
+                if attempt == 5:
+                    log_fn(
+                        f"  ⚠️ Não foi possível salvar {saida} "
+                        f"(arquivo pode estar aberto no Excel/OneDrive): {e}"
+                    )
+                    return
+                time.sleep(1)
+
+    def _executar_fluxo(self, selecionados: list, data_ini: datetime, data_fim: datetime,
                         token: threading.Event | None = None,
                         polo: str = "Todos os polos"):
         cfg = self._cfg
@@ -156,7 +186,8 @@ class App:
         self._log(f"  📁 Pasta de saída: {pasta}")
 
         # Limpa artefatos de execuções anteriores
-        for nome in ("incidencias_tratado.xlsx", "incidencias_tratado.json", "dashboard_incidencias.html"):
+        for nome in ("incidencias_tratado.xlsx", "incidencias_tratado.json",
+                     "dashboard_incidencias.html"):
             p = Path(pasta) / nome
             try:
                 if p.exists():
@@ -170,114 +201,90 @@ class App:
         if polo != "Todos os polos":
             self._log(f"  🔍 Filtro de polo: {polo}")
 
-        if selecionados.get("geonline"):
+        # Apenas Operview está ativa (M300 removido das configurações do DataHub).
+        if "operview" in selecionados:
             try:
-                if cfg.origem_relatorio == "operview":
-                    self._log("📥 Baixando Operview — Incidências...")
-                    baixar = baixar_operview
-                    cfg_dl = cfg.operview
-                    kwargs = {"notificar": self._notificar_operview}
-                else:
-                    self._log("📥 Baixando GeoOnline — Incidências...")
-                    baixar = baixar_incidencias
-                    cfg_dl = cfg.geonline
-                    kwargs = {}
-                arquivo = baixar(
-                    cfg_dl, pasta, data_ini, data_fim, self._log, token,
-                    polo=polo, **kwargs,
-                )
-
-                if token and token.is_set():
-                    self._log("⏹ Cancelado após download.")
-                    return
-
-                self._log("⚙️  Tratando incidências...")
-                df_full = tratar_incidencias(arquivo, self._log)
-                df = _filtrar_polo(df_full, polo, self._log)
-
-                if token and token.is_set():
-                    self._log("⏹ Cancelado após tratamento.")
-                    return
-
-                saida = Path(pasta) / "incidencias_tratado.xlsx"
-                try:
-                    for attempt in range(6):
-                        try:
-                            tmp_saida = saida.with_suffix(".tmp_%d.xlsx" % attempt)
-                            df.to_excel(str(tmp_saida), index=False)
-                            try:
-                                os.replace(str(tmp_saida), str(saida))
-                            except OSError:
-                                shutil.copy2(str(tmp_saida), str(saida))
-                            if tmp_saida.exists():
-                                try:
-                                    tmp_saida.unlink()
-                                except OSError:
-                                    pass
-                            break
-                        except (OSError, PermissionError) as e:
-                            try:
-                                if tmp_saida.exists():
-                                    tmp_saida.unlink()
-                            except OSError:
-                                pass
-                            if attempt == 5:
-                                raise
-                            time.sleep(1)
-                    self._log(f"  💾 Salvo: {saida} ({len(df)} linhas)")
-                except (OSError, PermissionError) as e:
-                    self._log(
-                        f"  ⚠️ Não foi possível salvar o xlsx "
-                        f"(arquivo pode estar aberto no Excel/OneDrive): {e}"
-                    )
-
-                if cfg.base_mensal_enabled:
-                    atualizar_base_mensal(df, "incidencias", pasta, "Data Início", self._log)
-                else:
-                    self._log("  ⏭️  Base mensal desativada.")
-
-                try:
-                    self._log("  📊 Gerando dashboard HTML...")
-                    dash = Path(pasta) / "dashboard_incidencias.html"
-                    gerar_dashboard_html(df_full, dash, self._log)
-                    self._log(f"  💾 Salvo: {dash}")
-                except Exception as e:
-                    self._log(f"❌ Dashboard falhou: {e}")
-
-                if cfg.n8n.enabled and cfg.n8n.webhook:
-                    self._log("  📡 Enviando análises para n8n...")
-                    payload = gerar_analises_n8n(df)
-                    enviar(payload, cfg.n8n.webhook, self._log)
-                else:
-                    self._log("  ⏭️  Envio n8n desativado.")
-
+                self._executar_operview(data_ini, data_fim, token, polo=polo)
             except Exception as e:
-                self._log(f"❌ Falha no download de incidências: {e}")
+                self._log(f"❌ Operview falhou: {e}")
+                import traceback as _tb2
+                _trace2 = _tb2.format_exc()
+                self._log(_trace2)
+                try:
+                    with open(r"C:\Users\BR0163806927\Downloads\operview_erro.txt", "w", encoding="utf-8") as _f:
+                        _f.write(_trace2)
+                except Exception:
+                    pass
 
         if cfg.sharepoint.enabled and cfg.sharepoint.pasta:
             if token and token.is_set():
                 return
             self._log("📤 Sincronizando com SharePoint...")
             try:
-                # Coleta arquivos gerados nesta execução
                 arquivos = []
-                tratado = Path(pasta) / "incidencias_tratado.xlsx"
-                if tratado.exists():
-                    arquivos.append(tratado)
-                dash = Path(pasta) / "dashboard_incidencias.html"
-                if dash.exists():
-                    arquivos.append(dash)
+                for nome in ("incidencias_tratado.xlsx", "dashboard_incidencias.html"):
+                    f = Path(pasta) / nome
+                    if f.exists():
+                        arquivos.append(f)
                 base_dir = Path(pasta) / "bases_mensais" / "incidencias"
                 if base_dir.exists():
                     agora = time.time()
                     for f in base_dir.iterdir():
                         if f.is_file() and (agora - f.stat().st_mtime) < 600:
                             arquivos.append(f)
-                sincronizar(arquivos, cfg.sharepoint.pasta, self._log)
+                if arquivos:
+                    sincronizar(arquivos, cfg.sharepoint.pasta, self._log)
+                else:
+                    self._log("  ⚠️  Nenhum arquivo para sincronizar.")
             except Exception as e:
                 self._log(f"❌ SharePoint falhou: {e}")
 
         self._log("🏁 Fluxo concluído.")
+
+    def _executar_operview(self, data_ini, data_fim, token,
+                           polo: str = "Todos os polos"):
+        cfg = self._cfg
+        pasta = str(Path(cfg.pasta_local).resolve())
+        self._log("📥 Baixando Operview — Incidências...")
+        arquivo = baixar_operview(
+            cfg.operview, pasta, data_ini, data_fim, self._log, token,
+            polo=polo, notificar=self._notificar_operview,
+        )
+
+        if token and token.is_set():
+            self._log("⏹ Cancelado após download.")
+            return
+
+        self._log("⚙️  Tratando incidências...")
+        df_full = tratar_incidencias(arquivo, self._log)
+        df = _filtrar_polo(df_full, polo, self._log)
+
+        if token and token.is_set():
+            self._log("⏹ Cancelado após tratamento.")
+            return
+
+        saida = Path(pasta) / "incidencias_tratado.xlsx"
+        self._salvar_xlsx_seguro(df, saida, self._log)
+
+        if cfg.base_mensal_enabled:
+            atualizar_base_mensal(df, "incidencias", pasta, "Data Início", self._log)
+        else:
+            self._log("  ⏭️  Base mensal desativada.")
+
+        try:
+            self._log("  📊 Gerando dashboard HTML...")
+            dash = Path(pasta) / "dashboard_incidencias.html"
+            gerar_dashboard_html(df_full, dash, self._log)
+            self._log(f"  💾 Salvo: {dash}")
+        except Exception as e:
+            self._log(f"❌ Dashboard falhou: {e}")
+
+        if cfg.n8n.enabled and cfg.n8n.webhook:
+            self._log("  📡 Enviando análises para n8n...")
+            payload = gerar_analises_n8n(df)
+            enviar(payload, cfg.n8n.webhook, self._log)
+        else:
+            self._log("  ⏭️  Envio n8n desativado.")
 
     # ── Tratamento avulso ─────────────────────────────────────────────────────
 

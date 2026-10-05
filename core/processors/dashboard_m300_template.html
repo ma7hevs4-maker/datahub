@@ -1,0 +1,2555 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Resumo Diário · Scanner 4.0 · RJ</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'IBM Plex Sans',sans-serif;min-height:100vh;transition:background .25s,color .25s}
+body.dark{background:#08111f;color:#dde7f5}
+body.light{background:#f0f4fa;color:#1a2e4a}
+::-webkit-scrollbar{height:5px;width:5px}
+body.dark ::-webkit-scrollbar-track{background:#08111f}
+body.dark ::-webkit-scrollbar-thumb{background:#1e3352;border-radius:3px}
+body.light ::-webkit-scrollbar-track{background:#e2eaf5}
+body.light ::-webkit-scrollbar-thumb{background:#94adc8;border-radius:3px}
+select option{background:inherit}
+input[type=number]{-moz-appearance:textfield}
+input[type=number]::-webkit-inner-spin-button{-webkit-appearance:none}
+.fade{animation:fd .2s ease}
+@keyframes fd{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:translateY(0)}}
+button{font-family:inherit;transition:all .15s}
+
+/* ── DARK tokens ── */
+body.dark { --bg0:#08111f; --bg1:#0a1628; --bg2:#0d1f38; --bg3:#0f2445;
+  --border:#1a2e4a; --border2:#1e3352; --text0:#dde7f5; --text1:#7db8e8;
+  --text2:#4b7ba8; --text3:#2d5a8e; --text4:#1e3a5a; --text5:#1a2e4a;
+  --accent:#3b82f6; --meta:#d97706; --ins:#1e3a8a; --ins-t:#60a5fa;
+  --out:#4c1d95; --out-t:#c084fc; --tag-bg:#0f1e35; }
+
+/* ── LIGHT tokens ── */
+body.light { --bg0:#f0f4fa; --bg1:#ffffff; --bg2:#e8eef8; --bg3:#d8e4f4;
+  --border:#c8d8ec; --border2:#b0c8e4; --text0:#1a2e4a; --text1:#1d4ed8;
+  --text2:#2d5a8e; --text3:#4b7ba8; --text4:#6a96bc; --text5:#94adc8;
+  --accent:#2563eb; --meta:#b45309; --ins:#dbeafe; --ins-t:#1d4ed8;
+  --out:#ede9fe; --out-t:#7c3aed; --tag-bg:#e8eef8; }
+</style>
+</head>
+<body class="dark">
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useMemo, useCallback, useRef, useEffect } = React;
+
+const EMBEDDED = {};
+
+const SEMANAL_DATA = {};
+const PONTOS_DAILY = {};
+const PONTOS_DATA = {};
+
+const MN={"1":"Jan","2":"Fev","3":"Mar","4":"Abr","5":"Mai","6":"Jun","7":"Jul","8":"Ago","9":"Set","10":"Out","11":"Nov","12":"Dez"};
+const UTS=["Magé","Niterói","São Gonçalo","Serrana","Sul"];
+const UTN=["Lagos","Macaé","Noroeste","Campos"];
+const TIPOS=["Insourcing","Outsourcing"];
+const KPI_KEYS=["login","despacho","plataforma","intervalo","retorno","producao"];
+const KPI_LBL={login:"1º Login",plataforma:"T. Plataforma",despacho:"Despacho",intervalo:"Intervalo",retorno:"R. Base",producao:"Produção"};
+const KPI_UNIT={login:"min",plataforma:"min",despacho:"min",intervalo:"min",retorno:"min",producao:"OS"};
+const LIB={login:true,plataforma:true,despacho:true,intervalo:true,retorno:true,producao:false};
+const DEF_META={login:8,plataforma:25,despacho:10,intervalo:60,retorno:40,producao:4.4};
+
+const PROCESSOS=[
+  {key:"Op+Extra",  label:"Op + Extra Op.", desc:"Operação + Extra Operação"},
+  {key:"Operação",  label:"Operação",        desc:"Somente Operação"},
+  {key:"Extra Operação", label:"Extra Op.", desc:"Somente Extra Operação"},
+  {key:"Comercial", label:"Comercial",      desc:"Corte e Religação + Novas Ligações + Gestor Novas Ligações"},
+  {key:"Manutenção", label:"Manutenção",    desc:"Manutenção"},
+  {key:"Perdas",    label:"Perdas",          desc:"Perdas + Ampla Chip"},
+  {key:"Obras",     label:"Obras",           desc:"Obras"},
+  {key:"Linha Viva",label:"Linha Viva",      desc:"Linha Viva"},
+  {key:"Poda",      label:"Poda",            desc:"Poda"},
+  {key:"Todos",      label:"Todos",          desc:"Todos os processos"},
+];
+
+
+function classifyPolo(base){
+  if(!base)return"";const b=(base+"").toUpperCase().trim();
+  if(b==="NITERÓI"||b==="NITEROI")return"Niterói";
+  if(b.includes("GONCALO")||b.includes("GONÇALO"))return"São Gonçalo";
+  if(b==="MAGÉ"||b==="MAGE")return"Magé";
+  if(b==="ANGRA"||b==="RESENDE")return"Sul";
+  if(b==="PETRÓPOLIS"||b==="PETROPOLIS"||b==="TERESÓPOLIS"||b==="TERESOPOLIS")return"Serrana";
+  if(b==="ARARUAMA"||b.includes("CABO FRIO"))return"Lagos";
+  if(b==="CAMPOS")return"Campos";
+  if(b==="CANTAGALO"||b==="ITAPERUNA"||b==="PÁDUA"||b==="PADUA")return"Noroeste";
+  if(b==="MACAÉ"||b==="MACAE")return"Macaé";
+  return"";
+}
+function classifyEP(eq){
+  if(!eq)return"X";const ch=(eq+"").slice(-3,999).charAt(0);
+  if(ch==="P")return"Parceira";if(ch==="E")return"Enel";return"X";
+}
+// De/Para oficial do processo (chave normalizada: maiúscula, sem acento)
+const PROC_DEPARA={
+  "AMPLA CHIP":"Perdas",
+  "CORTE E RELIGACAO":"Comercial",
+  "EXTRA OPERACAO":"Extra Operação",
+  "GESTOR NOVAS LIGACOES":"Comercial",
+  "LINHA VIVA":"Linha Viva",
+  "MANUTENCAO":"Manutenção",
+  "NOVAS LIGACOES":"Comercial",
+  "OBRAS":"Obras",
+  "OPERACAO":"Operação",
+  "PERDAS":"Perdas",
+  "PODA":"Poda",
+};
+function normProcKey(v){
+  return (v==null?"":v+"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toUpperCase().replace(/\s+/g," ").trim();
+}
+function classifyProcesso(proc){
+  const k=normProcKey(proc);
+  return k?(PROC_DEPARA[k]||null):null;
+}
+
+function parseXLSX(wb, dayFilter){
+  function mapProc(raw){ return classifyProcesso(raw); }
+
+  // ── helpers to map by HEADER NAME (não posição) ──
+  // Build first/last index lookups; handles duplicate header names.
+  function buildHeaderMap(rows){
+    const first={},last={};
+    const hdrs=(rows[0]||[]).map(h=>(h==null?"":String(h)).trim());
+    hdrs.forEach((h,i)=>{ if(!(h in first)) first[h]=i; last[h]=i; });
+    return {hdrs,first,last};
+  }
+  // Resolve column by trying multiple candidate names (returns -1 if none)
+  function col(map, candidates, useLast=false){
+    const src=useLast?map.last:map.first;
+    for(const c of candidates){ if(c in src) return src[c]; }
+    return -1;
+  }
+
+  // Polo derivation from base name (fallback when POLO column vazia)
+  function poloFromBase(rawBase){
+    const b=(rawBase||"").toUpperCase().trim();
+    if(b==="NITERÓI"||b==="NITEROI")return"Niterói";
+    if(b==="SÃO GONÇALO"||b.includes("GONCALO"))return"São Gonçalo";
+    if(b==="MAGÉ"||b==="MAGE")return"Magé";
+    if(b==="ANGRA"||b==="RESENDE")return"Sul";
+    if(b==="PETRÓPOLIS"||b==="PETROPOLIS"||b==="TERESÓPOLIS"||b==="TERESOPOLIS")return"Serrana";
+    if(b==="ARARUAMA"||b.includes("CABO FRIO"))return"Lagos";
+    if(b==="CAMPOS")return"Campos";
+    if(b==="CANTAGALO"||b==="ITAPERUNA"||b==="PÁDUA"||b==="PADUA")return"Noroeste";
+    if(b==="MACAÉ"||b==="MACAE")return"Macaé";
+    return "";
+  }
+
+  const mainSN=wb.SheetNames.find(s=>s.includes("Tabela Compl")||s.includes("Scanner"))||wb.SheetNames[0];
+  const rawRows=XLSX.utils.sheet_to_json(wb.Sheets[mainSN],{header:1,defval:null});
+  if(rawRows.length<2) return null;
+  const HMAP=buildHeaderMap(rawRows);
+
+  // Common columns (KPI / dimensões) — resolvidos por NOME
+  const C={
+    data:      col(HMAP,["Data Referência","Data Referencia","Data"]),
+    base:      col(HMAP,["Base"]),
+    intervalo: col(HMAP,["Intervalo"]),                 // primeira ocorrência (col J)
+    mes:       col(HMAP,["mês_calculo","mes_calculo","Mês","Mes"]),
+    ep:        col(HMAP,["Enel/Parceira"]),
+    processo:  col(HMAP,["Processo"]),
+    polo:      col(HMAP,["POLO","Polo"]),
+    producao:  col(HMAP,["Qtd Serviços","Qtd Servicos"]),
+    login:     col(HMAP,["1º Login Corrigido","1° Login Corrigido"]),
+    desloc:    col(HMAP,["1º Desloc","1° Desloc"]),     // KPI "plataforma" histórico aponta para este
+    despacho:  col(HMAP,["1º Despacho","1° Despacho"]),
+    retorno:   col(HMAP,["Retorno a base","Retorno a Base"]),
+    classif:   col(HMAP,["Classificação","Classificacao"]),
+  };
+  // Para back-compat o KPI rotulado "plataforma" no resto do app continua lendo "1º Desloc"
+  // (era assim no código original com índice fixo 47); usamos o mesmo dado por nome.
+  const KPI_COL={
+    login:     C.login,
+    plataforma:C.desloc,
+    despacho:  C.despacho,
+    intervalo: C.intervalo,
+    retorno:   C.retorno,
+    producao:  C.producao,
+  };
+
+  // ── Colunas de PONTUAÇÃO (CH..CX) — todas as colunas APÓS "Classificação" ──
+  const SCORE_TOTAL_COLS = [];
+  if(C.classif>=0){
+    for(let i=C.classif+1;i<HMAP.hdrs.length;i++) SCORE_TOTAL_COLS.push(i);
+  }
+  // Itens individuais exibidos no painel — mapeados por NOME (segunda ocorrência = bloco CH..CX)
+  const SCORE_IDX={
+    ativ:       col(HMAP,["Ativ/Equipe/Dia"], true),
+    eficiencia: col(HMAP,["Eficiencia","Eficiência"], true),
+    utilizacao: col(HMAP,["Utilização","Utilizacao"], true),
+    login:      col(HMAP,["1º Login","1° Login"], true),
+    desloc:     col(HMAP,["1º Desloc","1° Desloc"], true),
+    retorno:    col(HMAP,["Retorno a Base","Retorno a base"], true),
+    tasktime:   col(HMAP,["Task Time TR"], true),
+    tmr_sec:    col(HMAP,["TMR Secundário","TMR Secundario"], true),
+    tmr_imp:    col(HMAP,["TMR Improd.","TMR Improd"], true),
+  };
+  const SCORE_KEYS=Object.keys(SCORE_IDX);
+
+  const tn=v=>{if(v==null)return null;const n=parseFloat(v);return(isNaN(n)||n<0||n>1440)?null:Math.round(n*100)/100;};
+  const tp=v=>{if(v==null)return null;const n=parseFloat(v);return(isNaN(n)||n<0)?null:Math.round(n*100)/100;};
+  const tnum=v=>{if(v==null)return null;const n=parseFloat(v);return isNaN(n)?null:n;};
+
+  function rowDate(r){
+    const rd=C.data>=0?r[C.data]:null;
+    if(rd instanceof Date) return rd.toISOString().slice(0,10);
+    if(typeof rd==="number"){const d=XLSX.SSF.parse_date_code(rd);if(d)return `${d.y}-${String(d.m).padStart(2,"0")}-${String(d.d).padStart(2,"0")}`;}
+    if(typeof rd==="string") return rd.slice(0,10);
+    return null;
+  }
+  function rowPolo(r){
+    let polo=C.polo>=0?(r[C.polo]||""):"";
+    if(!polo) polo=poloFromBase(C.base>=0?r[C.base]:"");
+    return polo;
+  }
+
+  // ── FILTRO DE DIAS (global, aplicado a todas as abas) ──
+  const allDatesSet=new Set();
+  for(let i=1;i<rawRows.length;i++){const r=rawRows[i];if(!r)continue;const d=rowDate(r);if(d&&d.length>=10)allDatesSet.add(d);}
+  const allDates=[...allDatesSet].sort();
+  const daySet=(dayFilter&&dayFilter.length)?new Set(dayFilter):null;
+  const dayMonths=daySet?new Set([...daySet].map(d=>d.slice(0,7))):null;
+  // O filtro só restringe os meses que possuem dias selecionados (demais meses ficam íntegros).
+  const dayOK=r=>{ if(!daySet) return true; const d=rowDate(r); if(!d) return false;
+    return dayMonths.has(d.slice(0,7)) ? daySet.has(d) : true; };
+
+  // ── KPI diário (recs) ──
+  const recs=[];
+  for(let i=1;i<rawRows.length;i++){
+    const r=rawRows[i]; if(!r) continue;
+    if(!dayOK(r)) continue;
+    const polo=rowPolo(r);
+    const ep=C.ep>=0?r[C.ep]:null;
+    const mes=C.mes>=0?r[C.mes]:null;
+    if(!polo||!ep||!mes) continue;
+    if(ep!=="Enel"&&ep!=="Parceira") continue;
+    const proc=mapProc(C.processo>=0?r[C.processo]:null); if(!proc) continue;
+    const tipo=ep==="Enel"?"Insourcing":"Outsourcing";
+    const ds=rowDate(r); if(!ds||ds.length<10) continue;
+    const rec={polo,tipo,mes:parseInt(mes),ds,proc};
+    for(const k of KPI_KEYS){
+      const idx=KPI_COL[k];
+      rec[k]=idx>=0?(k==="producao"?tp(r[idx]):tn(r[idx])):null;
+    }
+    recs.push(rec);
+  }
+
+  // bucket → aggregate
+  const buckets={};
+  for(const r of recs){
+    const isOpExtra=r.proc==="Operação"||r.proc==="Extra Operação";
+    const pgs=[r.proc,"Todos",...(isOpExtra?["Op+Extra"]:[])];
+    for(const pg of pgs){
+      for(const t of [r.tipo,"Polo"]){
+        const key=`${r.mes}|${r.polo}|${t}|${pg}|${r.ds}`;
+        if(!buckets[key]) buckets[key]={mes:r.mes,polo:r.polo,tipo:t,pg,ds:r.ds,
+          login:[],plataforma:[],despacho:[],intervalo:[],retorno:[],producao:[]};
+        for(const k of KPI_KEYS){if(r[k]!=null) buckets[key][k].push(r[k]);}
+      }
+    }
+  }
+
+  const result={};
+  for(const bk of Object.values(buckets)){
+    const{mes,polo,tipo,pg,ds}=bk;
+    const ms=String(mes);
+    if(!result[ms])result[ms]={};
+    if(!result[ms][polo])result[ms][polo]={};
+    if(!result[ms][polo][tipo])result[ms][polo][tipo]={};
+    if(!result[ms][polo][tipo][pg])result[ms][polo][tipo][pg]={daily:{},mtd:{}};
+    const dv={};
+    for(const k of KPI_KEYS){const v=bk[k];dv[k]=v.length?Math.round(v.reduce((a,b)=>a+b,0)/v.length*100)/100:null;}
+    result[ms][polo][tipo][pg].daily[ds]=dv;
+  }
+
+  // MTD
+  for(const ms of Object.keys(result))
+    for(const polo of Object.keys(result[ms]))
+      for(const tipo of Object.keys(result[ms][polo]))
+        for(const pg of Object.keys(result[ms][polo][tipo])){
+          const d=result[ms][polo][tipo][pg].daily;
+          const mtd={};
+          for(const k of KPI_KEYS){const vv=Object.values(d).map(x=>x[k]).filter(v=>v!=null);
+            mtd[k]=vv.length?Math.round(vv.reduce((a,b)=>a+b,0)/vv.length*100)/100:null;}
+          result[ms][polo][tipo][pg].mtd=mtd;
+        }
+
+  // ── PONTUAÇÃO (mensal por polo/tipo/processo) ──
+  // Itens individuais: média do mês de cada coluna específica (CH..CX).
+  // TOTAL: soma das médias de TODAS as colunas após "Classificação" (CH..CX).
+  const ptBuckets={};
+  for(let i=1;i<rawRows.length;i++){
+    const r=rawRows[i]; if(!r) continue;
+    if(!dayOK(r)) continue;
+    const polo=rowPolo(r);
+    const ep=C.ep>=0?r[C.ep]:null;
+    const mes=C.mes>=0?r[C.mes]:null;
+    const proc=mapProc(C.processo>=0?r[C.processo]:null);
+    if(!polo||!ep||!mes||!proc) continue;
+    if(ep!=="Enel"&&ep!=="Parceira") continue;
+    const tipo=ep==="Enel"?"Insourcing":"Outsourcing";
+    const isOpExtra=proc==="Operação"||proc==="Extra Operação";
+    const pgs=[proc,"Todos",...(isOpExtra?["Op+Extra"]:[])];
+    for(const pg of pgs){
+      for(const t of [tipo,"Polo"]){
+        const key=`${parseInt(mes)}|${polo}|${t}|${pg}`;
+        if(!ptBuckets[key]){
+          ptBuckets[key]={mes:parseInt(mes),polo,tipo:t,pg,items:{},totalCols:{}};
+          SCORE_KEYS.forEach(k=>ptBuckets[key].items[k]=[]);
+          SCORE_TOTAL_COLS.forEach(ci=>ptBuckets[key].totalCols[ci]=[]);
+        }
+        SCORE_KEYS.forEach(k=>{const idx=SCORE_IDX[k];if(idx<0)return;const v=tnum(r[idx]);if(v!=null)ptBuckets[key].items[k].push(v);});
+        SCORE_TOTAL_COLS.forEach(ci=>{const v=tnum(r[ci]);if(v!=null)ptBuckets[key].totalCols[ci].push(v);});
+      }
+    }
+  }
+  const pontos={};
+  for(const bk of Object.values(ptBuckets)){
+    const ms=String(bk.mes);
+    if(!pontos[ms])pontos[ms]={};
+    if(!pontos[ms][bk.polo])pontos[ms][bk.polo]={};
+    if(!pontos[ms][bk.polo][bk.tipo])pontos[ms][bk.polo][bk.tipo]={};
+    const agg={};
+    SCORE_KEYS.forEach(k=>{const v=bk.items[k];agg[k]=v.length?Math.round(v.reduce((a,b)=>a+b,0)/v.length*100)/100:null;});
+    // TOTAL = soma das médias de cada coluna CH..CX
+    let total=0,hasAny=false;
+    SCORE_TOTAL_COLS.forEach(ci=>{const v=bk.totalCols[ci];if(v.length){total+=v.reduce((a,b)=>a+b,0)/v.length;hasAny=true;}});
+    agg.total=hasAny?Math.round(total*100)/100:null;
+    pontos[ms][bk.polo][bk.tipo][bk.pg]=agg;
+  }
+
+  // ── PONTUAÇÃO DIÁRIA ──
+  // Total por dia = soma das médias diárias de cada coluna CH..CX.
+  const pdBuckets={};
+  for(let i=1;i<rawRows.length;i++){
+    const r=rawRows[i]; if(!r) continue;
+    if(!dayOK(r)) continue;
+    const polo=rowPolo(r);
+    const ep=C.ep>=0?r[C.ep]:null;
+    const mes=C.mes>=0?r[C.mes]:null;
+    const proc=mapProc(C.processo>=0?r[C.processo]:null);
+    if(!polo||!ep||!mes||!proc) continue;
+    if(ep!=="Enel"&&ep!=="Parceira") continue;
+    const tipo=ep==="Enel"?"Insourcing":"Outsourcing";
+    const ds=rowDate(r); if(!ds||ds.length<10) continue;
+    const isOpExtra=proc==="Operação"||proc==="Extra Operação";
+    const pgs=[proc,"Todos",...(isOpExtra?["Op+Extra"]:[])];
+    for(const pg of pgs){
+      for(const t of [tipo,"Polo"]){
+        const key=`${parseInt(mes)}|${polo}|${t}|${pg}|${ds}`;
+        if(!pdBuckets[key]){
+          pdBuckets[key]={mes:parseInt(mes),polo,tipo:t,pg,ds,totalCols:{}};
+          SCORE_TOTAL_COLS.forEach(ci=>pdBuckets[key].totalCols[ci]=[]);
+        }
+        SCORE_TOTAL_COLS.forEach(ci=>{const v=tnum(r[ci]);if(v!=null)pdBuckets[key].totalCols[ci].push(v);});
+      }
+    }
+  }
+  const pontosDaily={};
+  for(const bk of Object.values(pdBuckets)){
+    const ms=String(bk.mes);
+    if(!pontosDaily[ms])pontosDaily[ms]={};
+    if(!pontosDaily[ms][bk.polo])pontosDaily[ms][bk.polo]={};
+    if(!pontosDaily[ms][bk.polo][bk.tipo])pontosDaily[ms][bk.polo][bk.tipo]={};
+    if(!pontosDaily[ms][bk.polo][bk.tipo][bk.pg])pontosDaily[ms][bk.polo][bk.tipo][bk.pg]={};
+    let total=0,hasAny=false;
+    SCORE_TOTAL_COLS.forEach(ci=>{const v=bk.totalCols[ci];if(v.length){total+=v.reduce((a,b)=>a+b,0)/v.length;hasAny=true;}});
+    pontosDaily[ms][bk.polo][bk.tipo][bk.pg][bk.ds]=hasAny?Math.round(total*10)/10:null;
+  }
+
+  // ── SEMANAL (week-of-month aggregation) ──
+  function weekOfMonth(day){ return day<=7?1:day<=14?2:day<=21?3:day<=28?4:5; }
+
+  const semBuckets={};
+  for(let i=1;i<rawRows.length;i++){
+    const r=rawRows[i]; if(!r) continue;
+    if(!dayOK(r)) continue;
+    const polo=C.polo>=0?r[C.polo]:null;
+    const ep=C.ep>=0?r[C.ep]:null;
+    const mes=C.mes>=0?r[C.mes]:null;
+    const proc=mapProc(C.processo>=0?r[C.processo]:null);
+    if(!polo||!ep||!mes||!proc) continue;
+    if(ep!=="Enel"&&ep!=="Parceira") continue;
+    const tipo=ep==="Enel"?"Insourcing":"Outsourcing";
+    const ds=rowDate(r); if(!ds||ds.length<10) continue;
+    const day=parseInt(ds.slice(8,10)); if(isNaN(day)) continue;
+    const wom=weekOfMonth(day);
+    const isOpExtra=proc==="Operação"||proc==="Extra Operação";
+    const pgs=[proc,"Todos",...(isOpExtra?["Op+Extra"]:[])];
+    const kmap={};
+    for(const k of KPI_KEYS){const idx=KPI_COL[k]; kmap[k]=idx>=0?r[idx]:null;}
+    for(const pg of pgs){
+      for(const t of [tipo,"Polo"]){
+        const key=`${parseInt(mes)}|${polo}|${t}|${pg}|${wom}`;
+        if(!semBuckets[key]){semBuckets[key]={mes:parseInt(mes),polo,tipo:t,pg,wom,d_ini:ds,d_fim:ds,
+          login:[],despacho:[],plataforma:[],intervalo:[],retorno:[],producao:[],totalCols:{}};
+          SCORE_TOTAL_COLS.forEach(ci=>semBuckets[key].totalCols[ci]=[]);}
+        if(ds<semBuckets[key].d_ini)semBuckets[key].d_ini=ds;
+        if(ds>semBuckets[key].d_fim)semBuckets[key].d_fim=ds;
+        for(const k of KPI_KEYS){const v=k==="producao"?tp(kmap[k]):tn(kmap[k]);if(v!=null)semBuckets[key][k].push(v);}
+        SCORE_TOTAL_COLS.forEach(ci=>{const v=tnum(r[ci]);if(v!=null)semBuckets[key].totalCols[ci].push(v);});
+      }
+    }
+  }
+  const semanalData={};
+  for(const bk of Object.values(semBuckets)){
+    const ms=String(bk.mes); const wk=String(bk.wom);
+    if(!semanalData[ms])semanalData[ms]={};
+    if(!semanalData[ms][bk.polo])semanalData[ms][bk.polo]={};
+    if(!semanalData[ms][bk.polo][bk.tipo])semanalData[ms][bk.polo][bk.tipo]={};
+    if(!semanalData[ms][bk.polo][bk.tipo][bk.pg])semanalData[ms][bk.polo][bk.tipo][bk.pg]={};
+    const agg={d_ini:bk.d_ini,d_fim:bk.d_fim};
+    for(const k of KPI_KEYS){const v=bk[k];agg[k]=v.length?Math.round(v.reduce((a,b)=>a+b,0)/v.length*10)/10:null;}
+    // pontos semanais = soma das médias semanais de cada coluna CH..CX
+    let total=0,hasAny=false;
+    SCORE_TOTAL_COLS.forEach(ci=>{const v=bk.totalCols[ci];if(v.length){total+=v.reduce((a,b)=>a+b,0)/v.length;hasAny=true;}});
+    agg.pontos=hasAny?Math.round(total*10)/10:null;
+    semanalData[ms][bk.polo][bk.tipo][bk.pg][wk]=agg;
+  }
+
+  if(!recs.length) return null;
+  return {kpi:result, pontos, pontosDaily, semanalData, allDates};
+}
+
+/* ── HELPERS ── */
+function getStatus(val,meta,k){
+  if(val===null||val===undefined)return"nd";
+  return LIB[k]?(val<=meta?"ok":val<=meta*1.3?"warn":"bad"):(val>=meta?"ok":val>=meta*0.85?"warn":"bad");
+}
+const SC_DARK={ok:{b:"#16a34a",t:"#fff",g:"#16a34a44"},warn:{b:"#d97706",t:"#fff",g:"#d9770633"},
+  bad:{b:"#dc2626",t:"#fff",g:"#dc262633"},nd:{b:"#1e3352",t:"#4b6a8a",g:"transparent"}};
+const SC_LIGHT={ok:{b:"#15803d",t:"#fff",g:"#15803d33"},warn:{b:"#b45309",t:"#fff",g:"#b4530933"},
+  bad:{b:"#b91c1c",t:"#fff",g:"#b91c1c33"},nd:{b:"#cbd5e1",t:"#64748b",g:"transparent"}};
+
+const fmt=(v,d=1)=>v===null||v===undefined?"—":v.toFixed(d);
+
+function Chip({val,meta,k,sz="sm",dark}){
+  const SC=dark?SC_DARK:SC_LIGHT;
+  const s=getStatus(val,meta,k),c=SC[s];
+  if(val===null||val===undefined)
+    return<span style={{color:"var(--text5)",fontSize:sz==="sm"?13:15}}>—</span>;
+  return<span style={{display:"inline-block",background:c.b,color:c.t,borderRadius:4,
+    padding:sz==="sm"?"3px 6px":"4px 9px",fontSize:sz==="sm"?13:15,fontWeight:700,
+    minWidth:42,textAlign:"center",boxShadow:`0 0 5px ${c.g}`}}>{val.toFixed(1)}</span>;
+}
+
+/* ── THEME TOGGLE ICON ── */
+function ThemeToggle({dark,onToggle}){
+  return(
+    <button onClick={onToggle} title={dark?"Modo claro":"Modo escuro"}
+      style={{width:36,height:36,borderRadius:"50%",border:"1px solid var(--border2)",
+        background:"var(--tag-bg)",color:"var(--text1)",cursor:"pointer",
+        display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,
+        flexShrink:0}}>
+      {dark?"☀️":"🌙"}
+    </button>
+  );
+}
+
+/* ── PROCESSO FILTER PILLS ── */
+function DiasFilter({allDates,selectedMes,value,onChange}){
+  const [open,setOpen]=useState(false);
+  const boxRef=useRef(null);
+  const dias=useMemo(()=>allDates.filter(d=>String(parseInt(d.slice(5,7)))===String(parseInt(selectedMes||"0"))).sort(),[allDates,selectedMes]);
+  useEffect(()=>{
+    if(!open) return;
+    const h=e=>{ if(boxRef.current&&!boxRef.current.contains(e.target)) setOpen(false); };
+    document.addEventListener("mousedown",h);
+    return()=>document.removeEventListener("mousedown",h);
+  },[open]);
+  if(!dias.length) return null;
+  const sel=new Set(value);
+  const selNoMes=dias.filter(d=>sel.has(d));
+  const toggle=d=>{ const n=new Set(sel); n.has(d)?n.delete(d):n.add(d); onChange([...n].sort()); };
+  const WD=["dom","seg","ter","qua","qui","sex","sáb"];
+  const label=selNoMes.length===0?"Todos os dias"
+    :selNoMes.length===1?("Dia "+parseInt(selNoMes[0].slice(8,10)))
+    :(selNoMes.length+" dias");
+  return(
+    <div ref={boxRef} style={{position:"relative"}}>
+      <button onClick={()=>setOpen(o=>!o)} style={{background:"var(--tag-bg)",color:"var(--text0)",
+        border:"1px solid var(--border2)",borderRadius:7,padding:"5px 10px",fontSize:13,cursor:"pointer",
+        display:"flex",alignItems:"center",gap:6}}>
+        <span>{label}</span><span style={{fontSize:9,color:"var(--text3)"}}>▼</span>
+      </button>
+      {open&&(
+        <div style={{position:"absolute",top:"calc(100% + 5px)",right:0,zIndex:300,
+          background:"var(--bg1)",border:"1px solid var(--border2)",borderRadius:10,padding:10,
+          boxShadow:"0 10px 26px #00000055",minWidth:230,maxHeight:340,overflowY:"auto"}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+            <span style={{fontSize:11,fontWeight:700,color:"var(--text2)"}}>DIAS</span>
+            <div style={{display:"flex",gap:5}}>
+              <button onClick={()=>onChange([...sel].filter(d=>!dias.includes(d)).concat(dias).sort())}
+                style={{fontSize:10,padding:"2px 8px",borderRadius:12,border:"1px solid var(--border)",
+                  background:"var(--tag-bg)",color:"var(--text3)",cursor:"pointer"}}>Todos</button>
+              <button onClick={()=>onChange([...sel].filter(d=>!dias.includes(d)).sort())}
+                style={{fontSize:10,padding:"2px 8px",borderRadius:12,border:"1px solid var(--border)",
+                  background:"var(--tag-bg)",color:"var(--text3)",cursor:"pointer"}}>Limpar</button>
+            </div>
+          </div>
+          {dias.map(d=>{
+            const on=sel.has(d);
+            const wd=WD[new Date(d+"T12:00:00").getDay()];
+            return(
+              <label key={d} style={{display:"flex",alignItems:"center",gap:8,padding:"4px 6px",borderRadius:6,
+                cursor:"pointer",background:on?"var(--tag-bg)":"transparent",fontSize:12,color:"var(--text1)"}}>
+                <input type="checkbox" checked={on} onChange={()=>toggle(d)} style={{cursor:"pointer"}}/>
+                <span style={{fontWeight:600,minWidth:22}}>{parseInt(d.slice(8,10))}</span>
+                <span style={{color:"var(--text3)",fontSize:11}}>{wd}</span>
+              </label>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ProcessoFilter({value,onChange}){
+  return(
+    <div style={{display:"flex",gap:4,flexWrap:"wrap",alignItems:"center"}}>
+      <span style={{fontSize:11,color:"var(--text3)",fontWeight:600,marginRight:2}}>PROCESSO</span>
+      {PROCESSOS.map(p=>(
+        <button key={p.key} onClick={()=>onChange(p.key)}
+          title={p.desc}
+          style={{padding:"3px 11px",borderRadius:20,border:`1px solid ${value===p.key?"var(--accent)":"var(--border)"}`,
+            cursor:"pointer",fontWeight:600,fontSize:11,
+            background:value===p.key?"var(--accent)":"var(--tag-bg)",
+            color:value===p.key?"#fff":"var(--text3)"}}>
+          {p.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/* ── EVOLUÇÃO CHART SVG ── */
+function EvolucaoChart({polo,kpiKey,metas,kpiData,processo,dark,mode}){
+  const SC=dark?SC_DARK:SC_LIGHT;
+  const meses=Object.keys(kpiData).sort((a,b)=>parseInt(a)-parseInt(b));
+  if(!meses.length)return null;
+  const meta=metas?.[kpiKey];
+  const tipos=mode==="polo"?["Polo"]:TIPOS;
+  const series=tipos.map(tipo=>({
+    tipo,
+    vals:meses.map(m=>kpiData[m]?.[polo]?.[tipo]?.[processo]?.mtd?.[kpiKey]??null)
+  }));
+  const allVals=[...series.flatMap(s=>s.vals.filter(v=>v!==null))];
+  if(meta!=null)allVals.push(meta);
+  const maxV=(Math.max(...allVals)||1)*1.15;
+  const W=540,H=155,PL=34,PR=32,PT=14,PB=38;
+  const cW=W-PL-PR,cH=H-PT-PB;
+  const toY=v=>PT+cH-(Math.max(0,v/maxV)*cH);
+  const metaY=meta!=null?toY(meta):null;
+  const n=meses.length;
+  const grpW=cW/n;
+  const nTipos=tipos.length;
+  const barW=Math.min(nTipos===1?32:24,grpW*(nTipos===1?0.55:0.36));
+  const TCOL={Insourcing:"#3b82f6",Outsourcing:"#a855f7",Polo:"#10b981"};
+  const gridColor=dark?"#1a2e4a":"#e2eaf5";
+  const labelColor=dark?"#2d5a8e":"#94adc8";
+  const mesColor=dark?"#4b7ba8":"#64748b";
+  return(
+    <svg viewBox={`0 0 ${W} ${H}`} style={{width:"100%",maxWidth:W,display:"block"}}>
+      {[0,.25,.5,.75,1].map(f=>{
+        const yy=PT+cH*(1-f);
+        const v=(maxV*f);
+        return<g key={f}>
+          <line x1={PL} y1={yy} x2={W-PR} y2={yy} stroke={gridColor} strokeWidth={0.7}/>
+          <text x={PL-3} y={yy+4} textAnchor="end" fontSize={10} fill={labelColor}>{v.toFixed(1)}</text>
+        </g>;
+      })}
+      {metaY!=null&&<>
+        <line x1={PL} y1={metaY} x2={W-PR} y2={metaY}
+          stroke="#f59e0b" strokeWidth={1.5} strokeDasharray="5,3" opacity={0.9}/>
+        <text x={W-PR+2} y={metaY+4} fontSize={10} fill="#f59e0b" fontWeight="600">Meta</text>
+      </>}
+      {meses.map((m,mi)=>{
+        const cx=PL+mi*grpW+grpW/2;
+        return<g key={m}>
+          {tipos.map((tipo,ti)=>{
+            const val=series[ti].vals[mi];
+            if(val===null)return null;
+            const x=nTipos===1?cx-barW/2:cx+(ti===0?-barW-1:1);
+            const y=toY(val);
+            const bh=Math.max(1,toY(0)-y);
+            const bc=TCOL[tipo];
+            return<g key={tipo}>
+              <rect x={x} y={y} width={barW} height={bh} fill={bc} opacity={0.88} rx={2}/>
+              <text x={x+barW/2} y={y-4} textAnchor="middle" fontSize={10} fill={bc} fontWeight="bold">{val.toFixed(1)}</text>
+            </g>;
+          })}
+          <text x={cx} y={H-PB+15} textAnchor="middle" fontSize={11} fill={mesColor} fontWeight="600">{MN[m]||m}</text>
+        </g>;
+      })}
+      {tipos.map((tipo,ti)=>(
+        <g key={tipo} transform={`translate(${PL+ti*95},${H-PB+26})`}>
+          <rect width={11} height={11} fill={TCOL[tipo]} rx={2} opacity={0.85}/>
+          <text x={14} y={9.5} fontSize={11} fill={dark?"#7db8e8":"#2d5a8e"}>{tipo}</text>
+        </g>
+      ))}
+    </svg>
+  );
+}
+
+/* ── GRÁFICO COMPARATIVO POLOS (eixo X = polos) ── */
+function PolosChart({kpiKey,metas,kpiData,selectedMes,polos,processo,dark,utsSep}){
+  const meta=metas[kpiKey];
+  const TCOL={Insourcing:"#3b82f6",Outsourcing:"#a855f7"};
+  const series=TIPOS.map(tipo=>({
+    tipo,
+    vals:polos.map(p=>kpiData[selectedMes]?.[p]?.[tipo]?.[processo]?.mtd?.[kpiKey]??null)
+  }));
+  const allVals=[...series.flatMap(s=>s.vals.filter(v=>v!==null)),meta];
+  const maxV=Math.max(...allVals)*1.18||1;
+  const W=560,H=170,PL=34,PR=36,PT=14,PB=42;
+  const cW=W-PL-PR,cH=H-PT-PB;
+  const toY=v=>PT+cH-(Math.max(0,v/maxV)*cH);
+  const metaY=toY(meta);
+  const n=polos.length;
+  const grpW=cW/n;
+  // smaller bars when many polos
+  const barW=Math.min(22,Math.max(8,grpW*0.30));
+  const gridColor=dark?"#1a2e4a":"#e2eaf5";
+  const labelColor=dark?"#2d5a8e":"#94adc8";
+  const poloColor=dark?"#4b7ba8":"#64748b";
+  const shortName=p=>p==="São Gonçalo"?"S.Gonç.":p==="Noroeste"?"Noroe.":p;
+  return(
+    <svg viewBox={`0 0 ${W} ${H}`} style={{width:"100%",maxWidth:W,display:"block"}}>
+      {[0,.25,.5,.75,1].map(f=>{
+        const yy=PT+cH*(1-f);
+        const v=maxV*f;
+        return<g key={f}>
+          <line x1={PL} y1={yy} x2={W-PR} y2={yy} stroke={gridColor} strokeWidth={0.7}/>
+          <text x={PL-3} y={yy+4} textAnchor="end" fontSize={10} fill={labelColor}>{v.toFixed(1)}</text>
+        </g>;
+      })}
+      {/* meta line */}
+      <line x1={PL} y1={metaY} x2={W-PR} y2={metaY}
+        stroke="#f59e0b" strokeWidth={1.5} strokeDasharray="5,3" opacity={0.9}/>
+      <text x={W-PR+2} y={metaY+4} fontSize={10} fill="#f59e0b" fontWeight="600">Meta</text>
+      {/* UTS/UTN separator */}
+      {utsSep!=null&&utsSep>0&&utsSep<n&&(()=>{
+        const sepX=PL+utsSep*grpW;
+        return<g>
+          <line x1={sepX} y1={PT-4} x2={sepX} y2={H-PB+4}
+            stroke="#a855f766" strokeWidth={1.2} strokeDasharray="4,3"/>
+          <text x={sepX-2} y={PT-7} textAnchor="end" fontSize={10} fill="#0ea5e9" fontWeight="600">UTS</text>
+          <text x={sepX+3} y={PT-7} textAnchor="start" fontSize={10} fill="#a855f7" fontWeight="600">UTN</text>
+        </g>;
+      })()}
+      {/* bars */}
+      {polos.map((polo,pi)=>{
+        const cx=PL+pi*grpW+grpW/2;
+        return<g key={polo}>
+          {TIPOS.map((tipo,ti)=>{
+            const val=series[ti].vals[pi];
+            if(val===null)return null;
+            const x=cx+(ti===0?-barW-1:1);
+            const y=toY(val);
+            const bh=Math.max(1,toY(0)-y);
+            const bc=TCOL[tipo];
+            return<g key={tipo}>
+              <rect x={x} y={y} width={barW} height={bh} fill={bc} opacity={0.88} rx={2}/>
+              <text x={x+barW/2} y={y-4} textAnchor="middle" fontSize={9.5} fill={bc} fontWeight="bold">{val.toFixed(1)}</text>
+            </g>;
+          })}
+          <text x={cx} y={H-PB+15} textAnchor="middle" fontSize={11} fill={poloColor} fontWeight="600">{shortName(polo)}</text>
+        </g>;
+      })}
+      {/* legend */}
+      {TIPOS.map((tipo,ti)=>(
+        <g key={tipo} transform={`translate(${PL+ti*95},${H-PB+28})`}>
+          <rect width={11} height={11} fill={TCOL[tipo]} rx={2} opacity={0.85}/>
+          <text x={14} y={9.5} fontSize={11} fill={dark?"#7db8e8":"#2d5a8e"}>{tipo}</text>
+        </g>
+      ))}
+    </svg>
+  );
+}
+
+/* ── TAB COMPARATIVO POR POLO ── */
+function TabComparativo({kpiData,metas,selectedMes,processo,dark}){
+  const [scope,setScope]=useState("todos"); // "todos"|"UTS"|"UTN"
+
+  const POLO_GROUPS={
+    UTS:{polos:UTS,color:"#0ea5e9",label:"UTS"},
+    UTN:{polos:UTN,color:"#a855f7",label:"UTN"},
+  };
+
+  // polos activos conforme scope, filtrando só os que têm dados
+  const activePols=useMemo(()=>{
+    const base=scope==="todos"?[...UTS,...UTN]:scope==="UTS"?UTS:UTN;
+    return base.filter(p=>kpiData[selectedMes]?.[p]);
+  },[scope,selectedMes,kpiData]);
+
+  const shortName=p=>p==="São Gonçalo"?"S.Gonçalo":p;
+
+  // Separator positions for "todos" mode (line between UTS and UTN)
+  const utsSep=scope==="todos"?UTS.filter(p=>kpiData[selectedMes]?.[p]).length:null;
+
+  return(
+    <div className="fade" style={{padding:"16px 20px"}}>
+      {/* scope selector */}
+      <div style={{display:"flex",gap:6,marginBottom:18,alignItems:"center",flexWrap:"wrap"}}>
+        <span style={{fontSize:11,color:"var(--text3)",fontWeight:600,marginRight:4}}>VISÃO</span>
+        {[
+          ["todos","🌐 Todos os Polos","linear-gradient(135deg,#0ea5e9,#a855f7)"],
+          ["UTS","UTS","#0ea5e9"],
+          ["UTN","UTN","#a855f7"],
+        ].map(([id,lbl,col])=>(
+          <button key={id} onClick={()=>setScope(id)} style={{
+            padding:"5px 18px",borderRadius:20,border:"none",cursor:"pointer",fontWeight:700,fontSize:13,
+            background:scope===id?col:"var(--tag-bg)",
+            color:scope===id?"#fff":"var(--text3)",
+            boxShadow:scope===id?"0 2px 10px #0ea5e933":"none",transition:"all .15s"}}>
+            {lbl}
+          </button>
+        ))}
+        {/* polo badges */}
+        {activePols.length>0&&(
+          <div style={{display:"flex",gap:5,flexWrap:"wrap",marginLeft:8}}>
+            {activePols.map(p=>{
+              const isUTS=UTS.includes(p);
+              return<span key={p} style={{
+                fontSize:10,padding:"2px 9px",borderRadius:20,fontWeight:600,
+                background:isUTS?"#0ea5e922":"#a855f722",
+                border:`1px solid ${isUTS?"#0ea5e955":"#a855f755"}`,
+                color:isUTS?"#0ea5e9":"#a855f7"}}>
+                {shortName(p)}
+              </span>;
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* tabela MTD */}
+      <div style={{marginBottom:22,overflowX:"auto"}}>
+        <table style={{borderCollapse:"collapse",width:"100%",minWidth:480}}>
+          <thead>
+            <tr style={{background:"var(--bg2)"}}>
+              <th style={{padding:"7px 12px",textAlign:"left",fontSize:11,color:"var(--text3)",fontWeight:700,
+                position:"sticky",left:0,background:"var(--bg2)",minWidth:115}}>KPI</th>
+              <th style={{padding:"7px 8px",textAlign:"center",fontSize:11,color:"var(--meta)",fontWeight:700,minWidth:48}}>META</th>
+              {activePols.map((p,pi)=>{
+                const isUTS=UTS.includes(p);
+                const sepLeft=scope==="todos"&&pi===utsSep?"2px solid #a855f755":pi===0?"none":"1px solid var(--border)";
+                return<th key={p} colSpan={3} style={{padding:"7px 4px",textAlign:"center",
+                  fontSize:11,color:isUTS?"#0ea5e9":"#a855f7",fontWeight:700,
+                  borderLeft:sepLeft,minWidth:135}}>
+                  {shortName(p)}
+                  {scope==="todos"&&<div style={{fontSize:8,color:isUTS?"#0ea5e977":"#a855f777",fontWeight:600}}>{isUTS?"UTS":"UTN"}</div>}
+                </th>;
+              })}
+            </tr>
+            <tr style={{background:"var(--bg1)"}}>
+              <th style={{position:"sticky",left:0,background:"var(--bg1)"}}/><th/>
+              {activePols.map((p,pi)=>{
+                const sepLeft=scope==="todos"&&pi===utsSep?"2px solid #a855f755":pi===0?"none":"1px solid var(--border)";
+                return<React.Fragment key={p}>
+                  <th style={{padding:"3px 5px",textAlign:"center",fontSize:10,color:"var(--ins-t)",fontWeight:700,minWidth:44,borderLeft:sepLeft}}>Ins</th>
+                  <th style={{padding:"3px 5px",textAlign:"center",fontSize:10,color:"var(--out-t)",fontWeight:700,minWidth:44}}>Parceira</th>
+                  <th style={{padding:"3px 5px",textAlign:"center",fontSize:10,color:"var(--accent)",fontWeight:700,minWidth:44,borderLeft:"1px dashed var(--border2)"}}>Polo</th>
+                </React.Fragment>;
+              })}
+            </tr>
+          </thead>
+          <tbody>
+            {KPI_KEYS.map((k,ki)=>(
+              <tr key={k} style={{background:ki%2===0?"var(--bg0)":"var(--bg1)"}}>
+                <td style={{padding:"6px 12px",fontSize:12,fontWeight:600,color:"var(--text1)",
+                  whiteSpace:"nowrap",borderRight:"1px solid var(--border)",
+                  position:"sticky",left:0,background:ki%2===0?"var(--bg0)":"var(--bg1)"}}>
+                  {KPI_LBL[k]}<span style={{fontSize:9,color:"var(--text4)",marginLeft:4}}>{KPI_UNIT[k]}</span>
+                </td>
+                <td style={{padding:"6px 7px",textAlign:"center",borderRight:"1px solid var(--border)"}}>
+                  <span style={{color:"var(--meta)",fontWeight:700,fontSize:12}}>{metas[k]}</span>
+                </td>
+                {activePols.map((p,pi)=>{
+                  const ins=kpiData[selectedMes]?.[p]?.Insourcing?.[processo]?.mtd?.[k]??null;
+                  const out=kpiData[selectedMes]?.[p]?.Outsourcing?.[processo]?.mtd?.[k]??null;
+                  const polo=kpiData[selectedMes]?.[p]?.Polo?.[processo]?.mtd?.[k]??null;
+                  const sepLeft=scope==="todos"&&pi===utsSep?"2px solid #a855f755":pi===0?"none":"1px solid var(--border)";
+                  return<React.Fragment key={p}>
+                    <td style={{padding:"6px 4px",textAlign:"center",borderLeft:sepLeft}}>
+                      <Chip val={ins} meta={metas[k]} k={k} dark={dark}/></td>
+                    <td style={{padding:"6px 4px",textAlign:"center"}}>
+                      <Chip val={out} meta={metas[k]} k={k} dark={dark}/></td>
+                    <td style={{padding:"6px 4px",textAlign:"center",borderLeft:"1px dashed var(--border2)"}}>
+                      <Chip val={polo} meta={metas[k]} k={k} dark={dark}/></td>
+                  </React.Fragment>;
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {/* gráficos — 1 por KPI, eixo X = polos ativos */}
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(500px,1fr))",gap:13}}>
+        {KPI_KEYS.map(k=>(
+          <div key={k} style={{background:"var(--bg1)",border:"1px solid var(--border)",borderRadius:12,padding:"13px 15px"}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+              <span style={{fontWeight:700,fontSize:13,color:"var(--text1)"}}>
+                {KPI_LBL[k]}<span style={{fontSize:10,color:"var(--text4)",marginLeft:5}}>{KPI_UNIT[k]}</span>
+              </span>
+              <span style={{fontSize:10,color:"var(--meta)"}}>Meta: {metas[k]} {KPI_UNIT[k]}</span>
+            </div>
+            <PolosChart kpiKey={k} metas={metas} kpiData={kpiData} selectedMes={selectedMes}
+              polos={activePols} processo={processo} dark={dark} utsSep={scope==="todos"?utsSep:null}/>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* ── TAB EVOLUÇÃO ── */
+function TabEvolucao({kpiData,metas,selectedUT,processo,dark,pontosData}){
+  const [polo,setPolo]=useState(null);
+  const [mode,setMode]=useState("split"); // "split" | "polo"
+  const groupPolos=selectedUT==="UTS"?UTS:selectedUT==="UTN"?UTN:UTS.concat(UTN);
+  // pseudo-polos agregados ficam no topo
+  const polos=["UTS","UTN"].concat(groupPolos);
+  const activePolo=(polo&&polos.includes(polo))?polo:"UTS";
+  const meses=Object.keys(kpiData).sort((a,b)=>parseInt(a)-parseInt(b));
+  const TIPOS_EXT=["Insourcing","Outsourcing","Polo"];
+  // constrói kpiData estendido com agregados UTS / UTN (média entre polos com dado)
+  const wrappedKpiData=React.useMemo(()=>{
+    const out={};
+    const groups={UTS,UTN};
+    meses.forEach(m=>{
+      const base=kpiData[m]||{};
+      const clone={...base};
+      Object.entries(groups).forEach(([gName,gList])=>{
+        const agg={};
+        TIPOS_EXT.forEach(tipo=>{
+          const mtdSum={},mtdCnt={};
+          gList.forEach(p=>{
+            const mtd=base[p]?.[tipo]?.[processo]?.mtd;
+            if(!mtd)return;
+            Object.entries(mtd).forEach(([k,v])=>{
+              if(v==null||isNaN(v))return;
+              mtdSum[k]=(mtdSum[k]||0)+v;
+              mtdCnt[k]=(mtdCnt[k]||0)+1;
+            });
+          });
+          const mtdAvg={};
+          Object.keys(mtdSum).forEach(k=>{mtdAvg[k]=mtdSum[k]/mtdCnt[k];});
+          agg[tipo]={[processo]:{mtd:mtdAvg}};
+        });
+        clone[gName]=agg;
+      });
+      out[m]=clone;
+    });
+    return out;
+  },[kpiData,processo,meses.join("|")]);
+  // pontosData estendido: agrega UTS / UTN por tipo (média dos totais dos polos com dado)
+  const wrappedPontosData=React.useMemo(()=>{
+    if(!pontosData)return {};
+    const out={};
+    const mesesP=Object.keys(pontosData);
+    const groups={UTS,UTN};
+    mesesP.forEach(m=>{
+      const base=pontosData[m]||{};
+      const clone={...base};
+      Object.entries(groups).forEach(([gName,gList])=>{
+        const agg={};
+        TIPOS_EXT.forEach(tipo=>{
+          let s=0,c=0;
+          gList.forEach(p=>{
+            const t=base[p]?.[tipo]?.[processo]?.total;
+            if(t==null||isNaN(t))return;
+            s+=t;c++;
+          });
+          agg[tipo]={[processo]:{total:c?s/c:null}};
+        });
+        clone[gName]=agg;
+      });
+      out[m]=clone;
+    });
+    return out;
+  },[pontosData,processo]);
+  const showTipos=mode==="polo"?["Polo"]:["Insourcing","Outsourcing"];
+  const TIPO_HEAD={Insourcing:{lbl:"Enel",color:"var(--ins-t)"},Outsourcing:{lbl:"Parceira",color:"var(--out-t)"},Polo:{lbl:"Polo",color:"#10b981"}};
+  return(
+    <div className="fade" style={{padding:"16px 20px"}}>
+      <div style={{display:"flex",gap:14,alignItems:"center",flexWrap:"wrap",marginBottom:10}}>
+        <div>
+          <div style={{fontSize:11,color:"var(--text4)",fontWeight:700,letterSpacing:".5px",marginBottom:6}}>
+            {selectedUT} · POLOS
+          </div>
+          <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+            {polos.map(p=>{
+              const isAgg=p==="UTS"||p==="UTN";
+              const has=isAgg?true:meses.some(m=>Object.keys(kpiData[m]?.[p]||{}).length>0);
+              const isUTN=UTN.includes(p)||p==="UTN";
+              return<button key={p} onClick={()=>setPolo(p)} style={{
+                padding:"5px 16px",borderRadius:20,
+                border:isAgg?"1px solid var(--accent)":(isUTN&&activePolo!==p?"1px dashed var(--border2)":"none"),
+                cursor:has?"pointer":"default",fontWeight:isAgg?800:700,fontSize:13,letterSpacing:isAgg?".5px":0,
+                background:activePolo===p?`linear-gradient(135deg,${isUTN?"#8b5cf6":"var(--accent)"},#0ea5e9)`:"var(--tag-bg)",
+                color:activePolo===p?"#fff":has?"var(--text2)":"var(--text5)",
+                boxShadow:activePolo===p?"0 2px 12px #1d4ed844":"none",opacity:has?1:0.4}}>{p}</button>;
+            })}
+          </div>
+        </div>
+        <div style={{marginLeft:"auto"}}>
+          <div style={{fontSize:11,color:"var(--text4)",fontWeight:700,letterSpacing:".5px",marginBottom:6}}>VISÃO</div>
+          <div style={{display:"flex",gap:6}}>
+            {[["split","Insourcing / Out"],["polo","Consolidado Polo"]].map(([id,lbl])=>(
+              <button key={id} onClick={()=>setMode(id)} style={{
+                padding:"5px 14px",borderRadius:20,border:"none",cursor:"pointer",fontWeight:700,fontSize:12,
+                background:mode===id?(id==="polo"?"#10b981":"var(--accent)"):"var(--tag-bg)",
+                color:mode===id?"#fff":"var(--text3)"}}>{lbl}</button>
+            ))}
+          </div>
+        </div>
+      </div>
+      {/* tabela MTD */}
+      <div style={{marginBottom:22,overflowX:"auto"}}>
+        <table style={{borderCollapse:"collapse",width:"100%",minWidth:500}}>
+          <thead>
+            <tr style={{background:"var(--bg2)"}}>
+              <th style={{padding:"7px 12px",textAlign:"left",fontSize:11,color:"var(--text3)",fontWeight:700,minWidth:115}}>KPI</th>
+              <th style={{padding:"7px 8px",textAlign:"center",fontSize:11,color:"var(--meta)",fontWeight:700,minWidth:48}}>META</th>
+              {meses.map(m=><th key={m} colSpan={showTipos.length} style={{padding:"7px 4px",textAlign:"center",
+                fontSize:11,color:"var(--accent)",fontWeight:700,borderLeft:"1px solid var(--border)",minWidth:48*showTipos.length}}>
+                {MN[m]||m}</th>)}
+            </tr>
+            <tr style={{background:"var(--bg1)"}}>
+              <th/><th/>
+              {meses.map(m=><React.Fragment key={m}>
+                {showTipos.map((tipo,ti)=>(
+                  <th key={tipo} style={{padding:"3px 5px",textAlign:"center",fontSize:10,
+                    color:TIPO_HEAD[tipo].color,fontWeight:700,minWidth:48,
+                    borderLeft:ti===0?"1px solid var(--border)":"none"}}>{TIPO_HEAD[tipo].lbl}</th>
+                ))}
+              </React.Fragment>)}
+            </tr>
+          </thead>
+          <tbody>
+            {KPI_KEYS.map((k,ki)=>(
+              <tr key={k} style={{background:ki%2===0?"var(--bg0)":"var(--bg1)"}}>
+                <td style={{padding:"6px 12px",fontSize:12,fontWeight:600,color:"var(--text1)",whiteSpace:"nowrap",borderRight:"1px solid var(--border)"}}>
+                  {KPI_LBL[k]}<span style={{fontSize:9,color:"var(--text4)",marginLeft:4}}>{KPI_UNIT[k]}</span>
+                </td>
+                <td style={{padding:"6px 7px",textAlign:"center",borderRight:"1px solid var(--border)"}}>
+                  <span style={{color:"var(--meta)",fontWeight:700,fontSize:12}}>{metas[k]}</span>
+                </td>
+                {meses.map(m=>(
+                  <React.Fragment key={m}>
+                    {showTipos.map((tipo,ti)=>{
+                      const v=wrappedKpiData[m]?.[activePolo]?.[tipo]?.[processo]?.mtd?.[k]??null;
+                      return<td key={tipo} style={{padding:"6px 4px",textAlign:"center",borderLeft:ti===0?"1px solid var(--border)":"none"}}>
+                        <Chip val={v} meta={metas[k]} k={k} dark={dark}/></td>;
+                    })}
+                  </React.Fragment>
+                ))}
+              </tr>
+            ))}
+            {/* linha PONTUAÇÃO */}
+            <tr style={{background:KPI_KEYS.length%2===0?"var(--bg0)":"var(--bg1)",borderTop:"2px solid var(--accent)"}}>
+              <td style={{padding:"8px 12px",fontSize:12,fontWeight:800,color:"var(--accent)",whiteSpace:"nowrap",borderRight:"1px solid var(--border)"}}>
+                PONTUAÇÃO<span style={{fontSize:9,color:"var(--text4)",marginLeft:4,fontWeight:600}}>pts</span>
+              </td>
+              <td style={{padding:"6px 7px",textAlign:"center",borderRight:"1px solid var(--border)",color:"var(--text5)",fontSize:11}}>—</td>
+              {meses.map(m=>(
+                <React.Fragment key={m}>
+                  {showTipos.map((tipo,ti)=>{
+                    const v=wrappedPontosData[m]?.[activePolo]?.[tipo]?.[processo]?.total??null;
+                    return<td key={tipo} style={{padding:"6px 4px",textAlign:"center",borderLeft:ti===0?"1px solid var(--border)":"none",
+                      fontWeight:800,fontSize:12,color:v==null?"var(--text5)":TIPO_HEAD[tipo].color}}>
+                      {v==null?"—":v.toFixed(1)}
+                    </td>;
+                  })}
+                </React.Fragment>
+              ))}
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      {/* gráficos */}
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(500px,1fr))",gap:13}}>
+        {/* Gráfico de Pontuação em destaque */}
+        <div style={{background:"var(--bg1)",border:"1px solid var(--accent)",borderRadius:12,padding:"13px 15px",gridColumn:"1 / -1"}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+            <span style={{fontWeight:800,fontSize:14,color:"var(--accent)",letterSpacing:".5px"}}>
+              PONTUAÇÃO<span style={{fontSize:10,color:"var(--text4)",marginLeft:5,fontWeight:600}}>total (Σ médias CH…CX)</span>
+            </span>
+            <span style={{fontSize:10,color:"var(--text4)"}}>{activePolo} · {mode==="polo"?"Consolidado":"Ins / Out"}</span>
+          </div>
+          <PontosEvolucaoChart polo={activePolo} pontosData={wrappedPontosData} processo={processo} dark={dark} mode={mode}/>
+        </div>
+        {KPI_KEYS.map(k=>(
+          <div key={k} style={{background:"var(--bg1)",border:"1px solid var(--border)",borderRadius:12,padding:"13px 15px"}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+              <span style={{fontWeight:700,fontSize:13,color:"var(--text1)"}}>
+                {KPI_LBL[k]}<span style={{fontSize:10,color:"var(--text4)",marginLeft:5}}>{KPI_UNIT[k]}</span>
+              </span>
+              <span style={{fontSize:10,color:"var(--meta)"}}>Meta: {metas[k]} {KPI_UNIT[k]}</span>
+            </div>
+            <EvolucaoChart polo={activePolo} kpiKey={k} metas={metas} kpiData={wrappedKpiData} processo={processo} dark={dark} mode={mode}/>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* ── PONTOS EVOLUÇÃO CHART ── */
+function PontosEvolucaoChart({polo,pontosData,processo,dark,mode}){
+  const meses=Object.keys(pontosData).sort((a,b)=>parseInt(a)-parseInt(b));
+  if(!meses.length)return null;
+  const tipos=mode==="polo"?["Polo"]:["Insourcing","Outsourcing"];
+  const series=tipos.map(tipo=>({
+    tipo,
+    vals:meses.map(m=>pontosData[m]?.[polo]?.[tipo]?.[processo]?.total??null)
+  }));
+  const allVals=series.flatMap(s=>s.vals.filter(v=>v!==null));
+  const maxV=(Math.max(...allVals,1)||1)*1.18;
+  const W=760,H=180,PL=40,PR=32,PT=14,PB=42;
+  const cW=W-PL-PR,cH=H-PT-PB;
+  const toY=v=>PT+cH-(Math.max(0,v/maxV)*cH);
+  const n=meses.length;
+  const grpW=cW/n;
+  const nTipos=tipos.length;
+  const barW=Math.min(nTipos===1?38:28,grpW*(nTipos===1?0.55:0.36));
+  const TCOL={Insourcing:"#3b82f6",Outsourcing:"#a855f7",Polo:"#10b981"};
+  const gridColor=dark?"#1a2e4a":"#e2eaf5";
+  const labelColor=dark?"#2d5a8e":"#94adc8";
+  const mesColor=dark?"#4b7ba8":"#64748b";
+  return(
+    <svg viewBox={`0 0 ${W} ${H}`} style={{width:"100%",display:"block"}}>
+      {[0,.25,.5,.75,1].map(f=>{
+        const yy=PT+cH*(1-f);
+        const v=(maxV*f);
+        return<g key={f}>
+          <line x1={PL} y1={yy} x2={W-PR} y2={yy} stroke={gridColor} strokeWidth={0.7}/>
+          <text x={PL-3} y={yy+4} textAnchor="end" fontSize={11} fill={labelColor}>{v.toFixed(0)}</text>
+        </g>;
+      })}
+      {meses.map((m,mi)=>{
+        const cx=PL+mi*grpW+grpW/2;
+        return<g key={m}>
+          {tipos.map((tipo,ti)=>{
+            const val=series[ti].vals[mi];
+            if(val===null)return null;
+            const x=nTipos===1?cx-barW/2:cx+(ti===0?-barW-1:1);
+            const y=toY(val);
+            const bh=Math.max(1,toY(0)-y);
+            const bc=TCOL[tipo];
+            return<g key={tipo}>
+              <rect x={x} y={y} width={barW} height={bh} fill={bc} opacity={0.9} rx={3}/>
+              <text x={x+barW/2} y={y-5} textAnchor="middle" fontSize={11} fill={bc} fontWeight="bold">{val.toFixed(1)}</text>
+            </g>;
+          })}
+          <text x={cx} y={H-PB+16} textAnchor="middle" fontSize={12} fill={mesColor} fontWeight="600">{MN[m]||m}</text>
+        </g>;
+      })}
+      {tipos.map((tipo,ti)=>(
+        <g key={tipo} transform={`translate(${PL+ti*105},${H-PB+28})`}>
+          <rect width={12} height={12} fill={TCOL[tipo]} rx={2} opacity={0.9}/>
+          <text x={16} y={10.5} fontSize={11.5} fill={dark?"#7db8e8":"#2d5a8e"}>{tipo}</text>
+        </g>
+      ))}
+    </svg>
+  );
+}
+
+
+/* ── TAB PAINEL ── */
+function TabPainel({kpiData,metas,selectedUT,selectedMes,processo,dark}){
+  const polos=selectedUT==="UTS"?UTS:UTN;
+  const prev=String(parseInt(selectedMes)-1);
+  const mD=kpiData[selectedMes]||{};
+  const pD=kpiData[prev]||{};
+  return(
+    <div className="fade" style={{padding:"16px 20px"}}>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(305px,1fr))",gap:13}}>
+        {polos.map(polo=>{
+          const pd=mD[polo]||{};
+          const pp=pD[polo]||{};
+          const has=Object.keys(pd).length>0;
+          return(
+            <div key={polo} style={{background:"var(--bg1)",border:"1px solid var(--border)",borderRadius:14,overflow:"hidden",opacity:has?1:0.4}}>
+              <div style={{padding:"10px 15px",background:"var(--bg2)",borderBottom:"1px solid var(--border)",
+                display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                <span style={{fontWeight:700,fontSize:15,color:"var(--text1)"}}>{polo}</span>
+                {!has&&<span style={{fontSize:11,color:"var(--text5)",fontStyle:"italic"}}>Sem dados</span>}
+              </div>
+              {has&&TIPOS.map(tipo=>{
+                const mtd=pd[tipo]?.[processo]?.mtd||{};
+                const mtdPv=pp[tipo]?.[processo]?.mtd||{};
+                if(!Object.keys(mtd).length)return null;
+                return(
+                  <div key={tipo} style={{padding:"10px 13px",borderBottom:"1px solid var(--bg2)"}}>
+                    <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:8}}>
+                      <span style={{background:"var(--tag-bg)",
+                        border:`1px solid ${tipo==="Insourcing"?"var(--ins-t)":"var(--out-t)"}44`,
+                        color:tipo==="Insourcing"?"var(--ins-t)":"var(--out-t)",
+                        padding:"2px 10px",borderRadius:20,fontSize:11,fontWeight:700}}>{tipo}</span>
+                    </div>
+                    <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:6}}>
+                      {KPI_KEYS.map(k=>{
+                        const val=mtd[k],pv=mtdPv[k];
+                        const s=getStatus(val,metas[k],k),c=dark?SC_DARK[s]:SC_LIGHT[s];
+                        const diff=(val!=null&&pv!=null)?val-pv:null;
+                        const better=diff!=null?(LIB[k]?diff<0:diff>0):null;
+                        return(
+                          <div key={k} style={{background:"var(--bg0)",borderRadius:8,padding:"7px 9px",border:`1px solid ${c.b}33`}}>
+                            <div style={{fontSize:9,color:"var(--text4)",fontWeight:700,letterSpacing:".5px",marginBottom:3}}>
+                              {KPI_LBL[k].toUpperCase()}</div>
+                            <div style={{fontSize:17,fontWeight:700,color:c.b,lineHeight:1,fontFamily:"'IBM Plex Mono',monospace"}}>
+                              {fmt(val)}<span style={{fontSize:8,color:"var(--text5)",marginLeft:2}}>{KPI_UNIT[k]}</span>
+                            </div>
+                            <div style={{fontSize:8,color:"var(--text5)",marginTop:2}}>meta {metas[k]}</div>
+                            {diff!=null&&<div style={{fontSize:9,color:better?"#22c55e":"#f87171",fontWeight:700,marginTop:1}}>
+                              {diff>0?"+":""}{diff.toFixed(1)} vs {MN[prev]||prev}</div>}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+/* ── TAB DIÁRIO ── */
+function TabDiario({kpiData,metas,selectedMes,processo,dark}){
+  const [polo,setPolo]=useState("Niterói");
+  const [view,setView]=useState("tabela");
+  const [kpiG,setKpiG]=useState("login");
+  const prev=String(parseInt(selectedMes)-1);
+  const SC2=dark?SC_DARK:SC_LIGHT;
+
+  // data for each tipo
+  function tipoData(tipo){
+    return {
+      daily: kpiData[selectedMes]?.[polo]?.[tipo]?.[processo]?.daily||{},
+      mtd:   kpiData[selectedMes]?.[polo]?.[tipo]?.[processo]?.mtd||{},
+      mtdPv: kpiData[prev]?.[polo]?.[tipo]?.[processo]?.mtd||{},
+    };
+  }
+
+  const allDays=useMemo(()=>{
+    const s=new Set();
+    for(const t of TIPOS) Object.keys(kpiData[selectedMes]?.[polo]?.[t]?.[processo]?.daily||{}).forEach(d=>s.add(d));
+    return[...s].sort();
+  },[kpiData,selectedMes,polo,processo]);
+
+  // KPI table for one tipo
+  function KpiTable({tipo}){
+    const{daily,mtd,mtdPv}=tipoData(tipo);
+    const isIns=tipo==="Insourcing";
+    const accentColor=isIns?"#3b82f6":"#a855f7";
+    return(
+      <div style={{marginBottom:20}}>
+        {/* tipo header */}
+        <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10}}>
+          <span style={{fontWeight:700,fontSize:13,
+            background:isIns?"var(--ins)":"var(--out)",
+            color:isIns?"var(--ins-t)":"var(--out-t)",
+            padding:"3px 14px",borderRadius:20,border:`1px solid ${accentColor}44`}}>
+            {tipo}
+          </span>
+          {/* MTD mini cards */}
+          <div style={{display:"flex",gap:6,flexWrap:"wrap",marginLeft:4}}>
+            {KPI_KEYS.map(k=>{
+              const val=mtd[k],pv=mtdPv[k];
+              const s=getStatus(val,metas[k],k),c=SC2[s];
+              const diff=(val!=null&&pv!=null)?val-pv:null;
+              const better=diff!=null?(LIB[k]?diff<0:diff>0):null;
+              return(
+                <div key={k} style={{background:"var(--bg1)",border:`1px solid ${c.b}55`,
+                  borderRadius:8,padding:"5px 9px",minWidth:72}}>
+                  <div style={{fontSize:8,color:"var(--text4)",fontWeight:700,letterSpacing:".4px"}}>{KPI_LBL[k].toUpperCase()}</div>
+                  <div style={{fontSize:16,fontWeight:700,color:c.b,fontFamily:"'IBM Plex Mono',monospace",lineHeight:1.1}}>{fmt(val)}</div>
+                  {diff!=null&&<div style={{fontSize:9,color:better?"#22c55e":"#f87171",fontWeight:600}}>{diff>0?"+":""}{diff.toFixed(1)} vs {MN[prev]||prev}</div>}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+        {/* table */}
+        {!allDays.length
+          ?<div style={{color:"var(--text4)",padding:"20px 0",fontSize:12}}>Sem dados para {polo} · {tipo} · {processo} · {MN[selectedMes]||selectedMes}</div>
+          :<div style={{overflowX:"auto"}}>
+            <table style={{borderCollapse:"collapse",width:"100%",minWidth:700}}>
+              <thead>
+                <tr style={{background:"var(--bg2)"}}>
+                  <th style={{padding:"6px 10px",textAlign:"left",fontSize:11,color:"var(--text3)",fontWeight:700,
+                    position:"sticky",left:0,background:"var(--bg2)",borderBottom:"1px solid var(--border)",
+                    minWidth:110,zIndex:2}}>KPI</th>
+                  <th style={{padding:"6px 6px",textAlign:"center",fontSize:11,color:"var(--meta)",fontWeight:700,minWidth:46,borderBottom:"1px solid var(--border)"}}>META</th>
+                  <th style={{padding:"6px 6px",textAlign:"center",fontSize:11,color:"var(--out-t)",fontWeight:700,minWidth:50,borderBottom:"1px solid var(--border)"}}>{MN[prev]||"—"}</th>
+                  {allDays.map(d=>{
+                    const day=parseInt(d.split("-")[2]);
+                    const wd=new Date(d+"T12:00:00").toLocaleDateString("pt-BR",{weekday:"short"}).replace(".","");
+                    return<th key={d} style={{padding:"3px 1px",textAlign:"center",fontSize:9,
+                      color:"var(--text3)",fontWeight:600,minWidth:34,borderBottom:"1px solid var(--border)"}}>
+                      <div style={{color:"var(--text4)",fontSize:8}}>{wd}</div>
+                      <div>{day}</div>
+                    </th>;
+                  })}
+                  <th style={{padding:"6px 6px",textAlign:"center",fontSize:11,
+                    color:"#22d3ee",fontWeight:700,minWidth:54,borderBottom:"1px solid var(--border)"}}>
+                    MTD {MN[selectedMes]||selectedMes}
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {KPI_KEYS.map((k,ki)=>{
+                  const bg=ki%2===0?"var(--bg0)":"var(--bg1)";
+                  return<tr key={k} style={{background:bg}}>
+                    <td style={{padding:"5px 10px",fontSize:12,fontWeight:600,color:"var(--text1)",
+                      background:bg,border:"1px solid var(--border)",position:"sticky",left:0,zIndex:1,whiteSpace:"nowrap"}}>
+                      {KPI_LBL[k]}<span style={{fontSize:9,color:"var(--text4)",marginLeft:3}}>{KPI_UNIT[k]}</span>
+                    </td>
+                    <td style={{padding:"4px 4px",textAlign:"center",borderRight:"1px solid var(--border)"}}>
+                      <span style={{color:"var(--meta)",fontWeight:700,fontSize:12}}>{metas[k]}</span>
+                    </td>
+                    <td style={{padding:"4px 4px",textAlign:"center",borderRight:"1px solid var(--border)"}}>
+                      <Chip val={mtdPv[k]??null} meta={metas[k]} k={k} dark={dark}/>
+                    </td>
+                    {allDays.map(d=><td key={d} style={{padding:"3px 1px",textAlign:"center",border:"1px solid var(--border)"}}>
+                      <Chip val={daily[d]?.[k]??null} meta={metas[k]} k={k} dark={dark}/>
+                    </td>)}
+                    <td style={{padding:"4px 5px",textAlign:"center",borderLeft:"2px solid ${accentColor}44",
+                      background:dark?`${accentColor}11`:`${accentColor}0a`}}>
+                      <Chip val={mtd[k]??null} meta={metas[k]} k={k} sz="md" dark={dark}/>
+                    </td>
+                  </tr>;
+                })}
+              </tbody>
+            </table>
+          </div>
+        }
+      </div>
+    );
+  }
+
+  // Gráfico para um tipo
+  function KpiGrafico({tipo}){
+    const{daily}=tipoData(tipo);
+    const meta=metas[kpiG];
+    const vals=allDays.map(d=>({d,v:daily[d]?.[kpiG]??null}));
+    const maxV=Math.max(...vals.map(x=>x.v??0),meta*1.1,0.1);
+    const SC2=dark?SC_DARK:SC_LIGHT;
+    const H=150;
+    const isIns=tipo==="Insourcing";
+    const barColor=isIns?"#3b82f6":"#a855f7";
+    return(
+      <div style={{flex:1,background:"var(--bg1)",border:"1px solid var(--border)",borderRadius:11,padding:"12px 14px"}}>
+        <div style={{fontWeight:700,fontSize:12,color:"var(--text1)",marginBottom:10}}>
+          <span style={{color:isIns?"#60a5fa":"#c084fc"}}>{tipo}</span>
+          <span style={{color:"var(--meta)",fontSize:11,marginLeft:12}}>Meta: {meta} {KPI_UNIT[kpiG]}</span>
+        </div>
+        {!vals.length?<div style={{color:"var(--text4)",padding:20,fontSize:11}}>Sem dados</div>:(
+          <div style={{position:"relative",height:H+20}}>
+            <div style={{position:"absolute",left:0,right:0,
+              top:H-(meta/maxV)*H,borderTop:"1.5px dashed #d9770666",zIndex:2}}/>
+            <div style={{display:"flex",alignItems:"flex-end",height:H,gap:2}}>
+              {vals.map(({d,v})=>{
+                const s=getStatus(v,meta,kpiG),c=SC2[s];
+                const bh=v!=null?Math.max(2,(v/maxV)*H):0;
+                return<div key={d} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center"}}
+                  title={`${d}: ${fmt(v)}`}>
+                  <div style={{width:"100%",height:bh,background:v!=null?barColor:"var(--bg2)",
+                    borderRadius:"3px 3px 0 0",opacity:.88}}/>
+                  <div style={{fontSize:7,color:"var(--text4)",marginTop:1}}>{parseInt(d.split("-")[2])}</div>
+                </div>;
+              })}
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  return(
+    <div className="fade" style={{display:"flex",flexDirection:"column",flex:1}}>
+      {/* sub-controls */}
+      <div style={{padding:"10px 18px",background:"var(--bg1)",borderBottom:"1px solid var(--border)",
+        display:"flex",gap:9,flexWrap:"wrap",alignItems:"center"}}>
+        <select value={polo} onChange={e=>setPolo(e.target.value)}
+          style={{background:"var(--tag-bg)",color:"var(--text0)",border:"1px solid var(--border2)",
+            borderRadius:7,padding:"5px 11px",fontSize:13,cursor:"pointer"}}>
+          <optgroup label="── UTS ──">{UTS.map(p=><option key={p}>{p}</option>)}</optgroup>
+          <optgroup label="── UTN ──">{UTN.map(p=><option key={p}>{p}</option>)}</optgroup>
+        </select>
+        <div style={{display:"flex",gap:2,background:"var(--bg2)",borderRadius:7,padding:2,marginLeft:"auto"}}>
+          {[["tabela","📊 Tabela"],["grafico","📈 Gráfico"]].map(([v,l])=>(
+            <button key={v} onClick={()=>setView(v)} style={{
+              padding:"4px 11px",borderRadius:5,border:"none",cursor:"pointer",
+              background:view===v?"var(--bg3)":"transparent",
+              color:view===v?"var(--text1)":"var(--text3)",fontSize:12,fontWeight:600}}>
+              {l}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* content */}
+      <div style={{flex:1,overflowX:"auto",overflowY:"auto",padding:"14px 18px"}}>
+        {view==="tabela"&&(
+          <div>
+            <KpiTable tipo="Insourcing"/>
+            <div style={{height:1,background:"var(--border)",margin:"8px 0 16px"}}/>
+            <KpiTable tipo="Outsourcing"/>
+          </div>
+        )}
+        {view==="grafico"&&(
+          <div>
+            <div style={{display:"flex",gap:6,marginBottom:14,flexWrap:"wrap"}}>
+              {KPI_KEYS.map(k=>(
+                <button key={k} onClick={()=>setKpiG(k)} style={{
+                  padding:"4px 12px",borderRadius:20,border:`1px solid ${kpiG===k?"var(--accent)":"var(--border)"}`,
+                  cursor:"pointer",fontWeight:600,fontSize:12,
+                  background:kpiG===k?"var(--accent)":"var(--tag-bg)",color:kpiG===k?"#fff":"var(--text3)"}}>
+                  {KPI_LBL[k]}
+                </button>
+              ))}
+            </div>
+            <div style={{display:"flex",gap:12,flexWrap:"wrap"}}>
+              <KpiGrafico tipo="Insourcing"/>
+              <KpiGrafico tipo="Outsourcing"/>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ══ TAB REPORT DIÁRIO (print) ══ */
+function TabReport({kpiData,metas,selectedMes,processo,dark}){
+  const [scope,setScope]=useState("UTS");
+  const printRef=useRef();
+  const mesLabel=MN[selectedMes]||selectedMes;
+  const prevMes=String(parseInt(selectedMes)-1);
+  const prevLabel=MN[prevMes]||prevMes;
+  const SC2=dark?SC_DARK:SC_LIGHT;
+
+  const polos=scope==="UTS"?UTS:UTN;
+
+  const allDays=useMemo(()=>{
+    const days=new Set();
+    for(const polo of polos)
+      for(const tipo of TIPOS)
+        Object.keys(kpiData[selectedMes]?.[polo]?.[tipo]?.[processo]?.daily||{}).forEach(d=>days.add(d));
+    return[...days].sort();
+  },[kpiData,selectedMes,scope,processo]);
+
+  function handlePrint(){
+    const el=printRef.current;
+    const w=window.open("","_blank","width=1500,height=900");
+    w.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"/>
+<title>Report ${mesLabel} - ${scope}</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;font-family:'Segoe UI',Arial,sans-serif}
+body{background:#fff;color:#1a2e4a;padding:8px;font-size:10px}
+h2{font-size:12px;margin-bottom:6px;color:#0f2445;font-weight:700}
+table{border-collapse:collapse;width:100%}
+th,td{border:1px solid #c8d8ec;padding:2px 4px;white-space:nowrap;font-size:10px}
+th{background:#0f2445;color:#fff;text-align:center}
+.h-polo{background:#1d4ed8;color:#fff;font-weight:700;text-align:center;vertical-align:middle}
+.h-ins{background:#1e3a8a;color:#bfdbfe;text-align:center;vertical-align:middle}
+.h-out{background:#4c1d95;color:#ddd6fe;text-align:center;vertical-align:middle}
+.h-day{background:#e8eef8;color:#2d5a8e;text-align:center}
+.h-meta{background:#fef9c3;color:#b45309;font-weight:700;text-align:center;vertical-align:middle}
+.h-mtd{background:#cffafe;color:#0e7490;font-weight:700;text-align:center;vertical-align:middle}
+.h-prev{background:#ede9fe;color:#6d28d9;font-weight:600;text-align:center;vertical-align:middle}
+.c-polo{background:#dbeafe;color:#1d4ed8;font-weight:700;text-align:center;vertical-align:middle;border-top:2px solid #1d4ed8!important}
+.c-ins{background:#dbeafe44;color:#1e3a8a;text-align:center;vertical-align:middle}
+.c-out{background:#ede9fe44;color:#4c1d95;text-align:center;vertical-align:middle}
+.c-kpi{background:#f8fafc;color:#1a2e4a;font-weight:600;text-align:left;padding-left:8px}
+.c-meta{background:#fefce8;color:#b45309;font-weight:700;text-align:center}
+.c-mtd-cell{text-align:center}
+.ok{background:#16a34a;color:#fff;border-radius:2px;padding:1px 4px;font-weight:700;display:inline-block}
+.warn{background:#d97706;color:#fff;border-radius:2px;padding:1px 4px;font-weight:700;display:inline-block}
+.bad{background:#dc2626;color:#fff;border-radius:2px;padding:1px 4px;font-weight:700;display:inline-block}
+.nd{color:#9ca3af;display:inline-block}
+.sep-top td,.sep-top th{border-top:2px solid #1d4ed8!important}
+@media print{@page{size:landscape;margin:4mm}body{padding:2px}}
+</style></head><body>
+<h2>📊 Report Diário · ${scope} · Processo: ${processo} · Acumulado ${mesLabel}</h2>
+`+el.innerHTML+`
+</body></html>`);
+    w.document.close();
+    setTimeout(()=>w.print(),500);
+  }
+
+  return(
+    <div className="fade" style={{display:"flex",flexDirection:"column",flex:1}}>
+      <div style={{padding:"10px 20px",background:"var(--bg1)",borderBottom:"1px solid var(--border)",
+        display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
+        <div style={{display:"flex",gap:3,background:"var(--bg2)",borderRadius:7,padding:2}}>
+          {["UTS","UTN"].map(s=>(
+            <button key={s} onClick={()=>setScope(s)} style={{
+              padding:"5px 18px",borderRadius:5,border:"none",cursor:"pointer",fontWeight:700,fontSize:13,
+              background:scope===s?"var(--accent)":"transparent",
+              color:scope===s?"#fff":"var(--text3)"}}>
+              {s}
+            </button>
+          ))}
+        </div>
+        <span style={{fontSize:12,color:"var(--text3)"}}>
+          {polos.join(" · ")} · <strong style={{color:"var(--text1)"}}>{mesLabel}</strong>
+        </span>
+        <button onClick={handlePrint}
+          style={{marginLeft:"auto",padding:"6px 18px",borderRadius:8,border:"none",cursor:"pointer",
+            background:"linear-gradient(135deg,#1d4ed8,#0ea5e9)",color:"#fff",fontWeight:700,fontSize:13,
+            display:"flex",alignItems:"center",gap:7}}>
+          🖨️ Imprimir / Salvar PDF
+        </button>
+      </div>
+
+      <div style={{flex:1,overflowX:"auto",overflowY:"auto",padding:"14px 20px"}}>
+        <div ref={printRef}>
+          <table style={{borderCollapse:"collapse",fontSize:11,fontFamily:"'IBM Plex Sans',sans-serif"}}>
+            <thead>
+              <tr>
+                <th rowSpan={2} style={{padding:"5px 8px",textAlign:"center",minWidth:88,
+                  background:"var(--bg3)",color:"var(--text1)",border:"1px solid var(--border)",
+                  position:"sticky",left:0,zIndex:4}}>Polo</th>
+                <th rowSpan={2} style={{padding:"5px 6px",textAlign:"center",minWidth:80,
+                  background:"var(--bg3)",color:"var(--text1)",border:"1px solid var(--border)",
+                  position:"sticky",left:88,zIndex:4}}>Tipo</th>
+                <th rowSpan={2} style={{padding:"5px 8px",textAlign:"left",minWidth:108,
+                  background:"var(--bg3)",color:"var(--text1)",border:"1px solid var(--border)",
+                  position:"sticky",left:168,zIndex:4}}>KPI</th>
+                <th rowSpan={2} style={{padding:"5px 5px",textAlign:"center",minWidth:44,
+                  background:"var(--meta)33",color:"var(--meta)",border:"1px solid var(--border)",fontWeight:700}}>
+                  META
+                </th>
+                <th rowSpan={2} style={{padding:"5px 5px",textAlign:"center",minWidth:48,
+                  background:"var(--out)22",color:"var(--out-t)",border:"1px solid var(--border)",fontWeight:700}}>
+                  {prevLabel}
+                </th>
+                {allDays.map(d=>{
+                  const day=parseInt(d.split("-")[2]);
+                  const wd=new Date(d+"T12:00:00").toLocaleDateString("pt-BR",{weekday:"short"}).replace(".","");
+                  return(
+                    <th key={d} style={{padding:"2px 2px",textAlign:"center",minWidth:32,
+                      background:"var(--bg2)",color:"var(--text3)",border:"1px solid var(--border)",
+                      fontWeight:600,fontSize:10}}>
+                      <div style={{fontSize:8,color:"var(--text4)"}}>{wd}</div>
+                      <div>{day}/{parseInt(selectedMes)}</div>
+                    </th>
+                  );
+                })}
+                <th rowSpan={2} style={{padding:"5px 5px",textAlign:"center",minWidth:50,
+                  background:"#0e749033",color:"#22d3ee",border:"1px solid var(--border)",fontWeight:700}}>
+                  MTD {mesLabel}
+                </th>
+                <th rowSpan={2} style={{padding:"5px 3px",textAlign:"center",minWidth:24,
+                  background:"var(--bg2)",color:"var(--text3)",border:"1px solid var(--border)",fontSize:10}}>↕</th>
+              </tr>
+              <tr/>{/* dummy second header row consumed by rowSpan */}
+            </thead>
+            <tbody>
+              {polos.map((polo,pi)=>
+                TIPOS.map((tipo,ti)=>
+                  KPI_KEYS.map((k,ki)=>{
+                    const daily=kpiData[selectedMes]?.[polo]?.[tipo]?.[processo]?.daily||{};
+                    const mtd  =kpiData[selectedMes]?.[polo]?.[tipo]?.[processo]?.mtd||{};
+                    const mtdPv=kpiData[prevMes]?.[polo]?.[tipo]?.[processo]?.mtd||{};
+                    const val=mtd[k]??null, prev=mtdPv[k]??null, meta=metas[k];
+                    const diff=(val!==null&&prev!==null)?val-prev:null;
+                    const better=diff!==null?(LIB[k]?diff<0:diff>0):null;
+                    const s=getStatus(val,meta,k), c=SC2[s];
+                    const isPoloFirst = ti===0 && ki===0;
+                    const isTipoFirst = ki===0;
+                    const evenPolo = pi%2===0;
+                    const bg = evenPolo
+                      ? (dark?"#08111f":"#f8fafc")
+                      : (dark?"#0a1628":"#ffffff");
+                    const tipoBg = tipo==="Insourcing"
+                      ? (dark?"#1e3a8a18":"#dbeafe66")
+                      : (dark?"#4c1d9518":"#ede9fe66");
+
+                    return(
+                      <tr key={`${polo}-${tipo}-${k}`} style={{
+                        background: isTipoFirst ? tipoBg : bg,
+                        borderTop: isPoloFirst ? "2px solid #3b82f666"
+                                 : isTipoFirst ? "1px dashed var(--border2)"
+                                 : "none"
+                      }}>
+                        {/* POLO — rowspan toda o bloco do polo */}
+                        {isPoloFirst&&(
+                          <td rowSpan={TIPOS.length*KPI_KEYS.length}
+                            style={{padding:"6px 8px",textAlign:"center",fontWeight:700,fontSize:12,
+                              verticalAlign:"middle",color:"var(--ins-t)",
+                              background:"var(--bg2)",border:"1px solid var(--border)",
+                              borderTop:"2px solid #3b82f666",
+                              position:"sticky",left:0,zIndex:2}}>
+                            {polo}
+                          </td>
+                        )}
+                        {/* TIPO — rowspan bloco do tipo */}
+                        {isTipoFirst&&(
+                          <td rowSpan={KPI_KEYS.length}
+                            style={{padding:"4px 6px",textAlign:"center",fontWeight:700,fontSize:11,
+                              verticalAlign:"middle",
+                              color:tipo==="Insourcing"?"var(--ins-t)":"var(--out-t)",
+                              background:tipoBg,border:"1px solid var(--border)",
+                              borderTop:isPoloFirst?"2px solid #3b82f666":"1px dashed var(--border2)",
+                              position:"sticky",left:88,zIndex:2}}>
+                            {tipo}
+                          </td>
+                        )}
+                        {/* KPI */}
+                        <td style={{padding:"4px 8px",fontSize:11,fontWeight:600,color:"var(--text1)",
+                          background:bg,border:"1px solid var(--border)",whiteSpace:"nowrap",
+                          position:"sticky",left:168,zIndex:2}}>
+                          {KPI_LBL[k]}
+                          <span style={{fontSize:9,color:"var(--text4)",marginLeft:3}}>{KPI_UNIT[k]}</span>
+                        </td>
+                        {/* META */}
+                        <td style={{padding:"3px 4px",textAlign:"center",fontWeight:700,
+                          color:"var(--meta)",background:"var(--meta)11",
+                          border:"1px solid var(--border)",fontSize:12}}>
+                          {meta}
+                        </td>
+                        {/* PREV MTD */}
+                        <td style={{padding:"3px 3px",textAlign:"center",border:"1px solid var(--border)"}}>
+                          <Chip val={prev} meta={meta} k={k} dark={dark}/>
+                        </td>
+                        {/* DAILY */}
+                        {allDays.map(d=>(
+                          <td key={d} style={{padding:"2px 2px",textAlign:"center",border:"1px solid var(--border)"}}>
+                            <Chip val={daily[d]?.[k]??null} meta={meta} k={k} dark={dark}/>
+                          </td>
+                        ))}
+                        {/* MTD */}
+                        <td style={{padding:"3px 3px",textAlign:"center",
+                          background:c.b+"22",border:"1px solid var(--border)"}}>
+                          <span style={{display:"inline-block",background:c.b,color:c.t,
+                            borderRadius:4,padding:"2px 6px",fontSize:12,fontWeight:700,
+                            minWidth:36,textAlign:"center"}}>
+                            {fmt(val)}
+                          </span>
+                        </td>
+                        {/* ARROW */}
+                        <td style={{padding:"2px 2px",textAlign:"center",
+                          border:"1px solid var(--border)",fontSize:13}}>
+                          {diff===null?"":better?"🟢":"🔴"}
+                        </td>
+                      </tr>
+                    );
+                  })
+                )
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
+/* ══ TAB PONTUAÇÃO ══ */
+const SCORE_ITEMS = [
+  {key:"ativ",    label:"Ativ/Equipe/Dia", meta:15,   max:16.5},
+  {key:"eficiencia", label:"Eficiência",   meta:10,   max:11.7},
+  {key:"utilizacao", label:"Utilização",   meta:10,   max:11.2},
+  {key:"login",   label:"1º Login",        meta:10,   max:13.6},
+  {key:"desloc",  label:"1º Deslocamento", meta:10,   max:13.6},
+  {key:"retorno", label:"Retorno a Base",  meta:5,    max:7.5},
+  {key:"tasktime",label:"Task Time TR",    meta:15,   max:23.33},
+  {key:"tmr_sec", label:"TMR Secundário",  meta:15,   max:18.41},
+  {key:"tmr_imp", label:"TMR Improd.",     meta:10,   max:13.8},
+];
+const SCORE_META_TOTAL = 80;
+const SCORE_MAX_TOTAL  = 129.64;
+
+function scoreStatus(val, meta, max){
+  if(val===null||val===undefined) return "nd";
+  if(val>=meta) return "ok";
+  if(val>=meta*0.85) return "warn";
+  return "bad";
+}
+
+function ScoreBar({val, max, color}){
+  const pct = val!=null ? Math.min(100, (val/max)*100) : 0;
+  return(
+    <div style={{height:6,background:"var(--bg3)",borderRadius:3,overflow:"hidden",marginTop:3}}>
+      <div style={{height:"100%",width:`${pct}%`,background:color,borderRadius:3,transition:"width .4s"}}/>
+    </div>
+  );
+}
+
+function PontosPoloCard({polo, mes, pontosData, processo, dark}){
+  const data = pontosData[mes]?.[polo];
+  const SC2 = dark?SC_DARK:SC_LIGHT;
+  if(!data || !Object.keys(data).length)
+    return(
+      <div style={{background:"var(--bg1)",border:"1px solid var(--border)",borderRadius:14,
+        padding:"14px 16px",opacity:0.4}}>
+        <div style={{fontWeight:700,fontSize:15,color:"var(--text1)",marginBottom:8}}>{polo}</div>
+        <div style={{fontSize:12,color:"var(--text4)",fontStyle:"italic"}}>Sem dados</div>
+      </div>
+    );
+
+  return(
+    <div style={{background:"var(--bg1)",border:"1px solid var(--border)",borderRadius:14,overflow:"hidden"}}>
+      {/* card header */}
+      <div style={{padding:"10px 14px",background:"var(--bg2)",
+        borderBottom:"1px solid var(--border)",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+        <span style={{fontWeight:700,fontSize:15,color:"var(--text1)"}}>{polo}</span>
+        <div style={{display:"flex",gap:10}}>
+          {["Insourcing","Outsourcing","Polo"].map(tipo=>{
+            const d=data[tipo]?.[processo]; if(!d) return null;
+            const total=d.total??null;
+            const s=scoreStatus(total,SCORE_META_TOTAL,SCORE_MAX_TOTAL);
+            const c=SC2[s];
+            const isIns=tipo==="Insourcing";
+            const isPolo=tipo==="Polo";
+            const lblColor=isPolo?"var(--accent)":(isIns?"var(--ins-t)":"var(--out-t)");
+            return(
+              <div key={tipo} style={{textAlign:"center",...(isPolo?{paddingLeft:10,marginLeft:2,borderLeft:"1px dashed var(--border2)"}:{})}}>
+                <div style={{fontSize:9,color:lblColor,fontWeight:700,letterSpacing:".4px"}}>{isPolo?"POLO":tipo.toUpperCase()}</div>
+                <div style={{fontSize:22,fontWeight:700,color:c.b,fontFamily:"'IBM Plex Mono',monospace",lineHeight:1}}>{total!=null?total.toFixed(1):"—"}</div>
+                <div style={{fontSize:8,color:"var(--text5)"}}>/ {SCORE_META_TOTAL} pts</div>
+                <ScoreBar val={total} max={SCORE_MAX_TOTAL} color={c.b}/>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* score items table */}
+      <div style={{padding:"10px 14px"}}>
+        <table style={{borderCollapse:"collapse",width:"100%",fontSize:11}}>
+          <thead>
+            <tr>
+              <th style={{padding:"4px 0",textAlign:"left",color:"var(--text3)",fontWeight:700,fontSize:10}}>ITEM</th>
+              <th style={{padding:"4px 6px",textAlign:"center",color:"var(--meta)",fontWeight:700,fontSize:10}}>META</th>
+              <th style={{padding:"4px 6px",textAlign:"center",color:"var(--meta)",fontWeight:700,fontSize:10}}>MÁX</th>
+              {TIPOS.map(tipo=>{
+                const isIns=tipo==="Insourcing";
+                return(
+                  <th key={tipo} style={{padding:"4px 8px",textAlign:"center",fontWeight:700,fontSize:10,
+                    color:isIns?"var(--ins-t)":"var(--out-t)"}}>
+                    {isIns?"Enel":"Parceira"}
+                  </th>
+                );
+              })}
+            </tr>
+          </thead>
+          <tbody>
+            {SCORE_ITEMS.map((item,ki)=>{
+              const bg = ki%2===0?"var(--bg0)":"var(--bg1)";
+              return(
+                <tr key={item.key} style={{background:bg}}>
+                  <td style={{padding:"5px 4px",fontWeight:600,color:"var(--text1)",whiteSpace:"nowrap"}}>{item.label}</td>
+                  <td style={{padding:"5px 6px",textAlign:"center",color:"var(--meta)",fontWeight:700}}>{item.meta}</td>
+                  <td style={{padding:"5px 6px",textAlign:"center",color:"var(--text3)",fontSize:10}}>{item.max}</td>
+                  {TIPOS.map(tipo=>{
+                    const val=data[tipo]?.[processo]?.[item.key]??null;
+                    const s=scoreStatus(val,item.meta,item.max);
+                    const c=SC2[s];
+                    return(
+                      <td key={tipo} style={{padding:"5px 6px",textAlign:"center"}}>
+                        {val!=null?(
+                          <div>
+                            <span style={{display:"inline-block",background:c.b,color:c.t,
+                              borderRadius:4,padding:"2px 7px",fontSize:12,fontWeight:700,minWidth:42,textAlign:"center"}}>
+                              {val.toFixed(1)}
+                            </span>
+                            <ScoreBar val={val} max={item.max} color={c.b}/>
+                          </div>
+                        ):<span style={{color:"var(--text5)"}}>—</span>}
+                      </td>
+                    );
+                  })}
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function TabPontos({pontosData,selectedMes,processo,dark}){
+  const [scope, setScope] = useState("UTS");
+  const polos = scope==="UTS" ? UTS : UTN;
+  const mesLabel = MN[selectedMes]||selectedMes;
+
+  return(
+    <div className="fade" style={{padding:"16px 20px"}}>
+      {/* scope toggle */}
+      <div style={{display:"flex",gap:6,marginBottom:18,alignItems:"center",flexWrap:"wrap"}}>
+        <span style={{fontSize:11,color:"var(--text3)",fontWeight:600,marginRight:4}}>UNIDADE</span>
+        {["UTS","UTN"].map(s=>(
+          <button key={s} onClick={()=>setScope(s)} style={{
+            padding:"5px 18px",borderRadius:20,border:"none",cursor:"pointer",fontWeight:700,fontSize:13,
+            background:scope===s?"var(--accent)":"var(--tag-bg)",
+            color:scope===s?"#fff":"var(--text3)",
+            boxShadow:scope===s?"0 2px 10px #1d4ed844":"none"}}>
+            {s}
+          </button>
+        ))}
+        <span style={{fontSize:11,color:"var(--text4)",marginLeft:6}}>
+          Pontuação Média das Equipes · Acumulado <strong style={{color:"var(--text1)"}}>{mesLabel}</strong>
+        </span>
+        {/* legend */}
+        <div style={{display:"flex",gap:10,marginLeft:"auto",alignItems:"center"}}>
+          {[["ok","≥ Meta"],["warn","≥ 85% Meta"],["bad","< 85% Meta"]].map(([s,l])=>{
+            const c = dark?SC_DARK[s]:SC_LIGHT[s];
+            return(
+              <div key={s} style={{display:"flex",alignItems:"center",gap:5,fontSize:11}}>
+                <span style={{width:12,height:12,borderRadius:3,background:c.b,display:"inline-block"}}/>
+                <span style={{color:"var(--text3)"}}>{l}</span>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* polo cards grid */}
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(380px,1fr))",gap:14}}>
+        {polos.map(polo=>(
+          <PontosPoloCard key={polo} polo={polo} mes={selectedMes} pontosData={pontosData} processo={processo} dark={dark}/>
+        ))}
+      </div>
+
+      {/* footnote */}
+      <div style={{marginTop:20,padding:"10px 14px",background:"var(--bg1)",border:"1px solid var(--border)",
+        borderRadius:10,fontSize:11,color:"var(--text3)"}}>
+        <strong style={{color:"var(--text1)"}}>ℹ️ Como interpretar:</strong>
+        {" "}A pontuação é a média dos pontos obtidos pelas equipes do polo no mês.
+        Cada item tem uma <span style={{color:"var(--meta)",fontWeight:700}}>meta</span> (pontuação ao atingir o objetivo)
+        e um <span style={{color:"var(--text2)",fontWeight:700}}>máximo</span> (teto possível).
+        O <strong>PONTO total</strong> é a <strong>soma das médias</strong> de cada coluna de pontuação (CH a CX) da base.
+        As notas individuais são as colunas CH–CV (média do mês).
+      </div>
+    </div>
+  );
+}
+
+
+/* ══ TAB PONTUAÇÃO DIÁRIA ══ */
+function TabPontosDiario({selectedMes,pontosDaily,pontosData,processo,dark}){
+  const [scope, setScope] = useState("UTS");
+  const SC2 = dark ? SC_DARK : SC_LIGHT;
+  const mesLabel = MN[selectedMes]||selectedMes;
+  const prev = String(parseInt(selectedMes)-1);
+  const polos = scope==="UTS" ? UTS : UTN;
+
+  // all days across all polos in scope
+  const allDays = useMemo(()=>{
+    const s = new Set();
+    for(const polo of polos)
+      for(const tipo of TIPOS)
+        Object.keys(pontosDaily[selectedMes]?.[polo]?.[tipo]?.[processo]||{}).forEach(d=>s.add(d));
+    return [...s].sort();
+  },[pontosDaily, selectedMes, scope, processo]);
+
+  function scoreChip(val, sz="sm"){
+    if(val===null||val===undefined) return <span style={{color:"var(--text5)",fontSize:sz==="sm"?11:13}}>—</span>;
+    const bg = val>=80?"#16a34a":val>=68?"#d97706":"#dc2626";
+    return(
+      <span style={{display:"inline-block",background:bg,color:"#fff",borderRadius:4,
+        padding:sz==="sm"?"2px 4px":"2px 7px",fontSize:sz==="sm"?11:13,
+        fontWeight:700,minWidth:sz==="sm"?34:42,textAlign:"center"}}>
+        {val.toFixed(1)}
+      </span>
+    );
+  }
+
+  // MTD alinhado com a aba Pontuação: usa o total mensal (soma das médias
+  // de cada coluna CH..CX sobre TODAS as linhas do mês) — não a média dos
+  // totais diários, que difere quando o tamanho da amostra varia por dia.
+  function getMTD(polo, tipo){
+    const t = pontosData?.[selectedMes]?.[polo]?.[tipo]?.[processo]?.total;
+    return t==null?null:Math.round(t*10)/10;
+  }
+  function getPrevMTD(polo, tipo){
+    const t = pontosData?.[prev]?.[polo]?.[tipo]?.[processo]?.total;
+    return t==null?null:Math.round(t*10)/10;
+  }
+
+  return(
+    <div className="fade" style={{display:"flex",flexDirection:"column",flex:1}}>
+      {/* controls */}
+      <div style={{padding:"10px 18px",background:"var(--bg1)",borderBottom:"1px solid var(--border)",
+        display:"flex",gap:9,flexWrap:"wrap",alignItems:"center"}}>
+        <div style={{display:"flex",gap:3,background:"var(--bg2)",borderRadius:7,padding:2}}>
+          {["UTS","UTN"].map(s=>(
+            <button key={s} onClick={()=>setScope(s)} style={{
+              padding:"5px 18px",borderRadius:5,border:"none",cursor:"pointer",fontWeight:700,fontSize:13,
+              background:scope===s?"var(--accent)":"transparent",
+              color:scope===s?"#fff":"var(--text3)"}}>
+              {s}
+            </button>
+          ))}
+        </div>
+        <span style={{fontSize:12,color:"var(--text3)"}}>
+          Pontuação diária · <strong style={{color:"var(--text1)"}}>{mesLabel}</strong>
+        </span>
+        <div style={{display:"flex",gap:10,marginLeft:"auto",alignItems:"center"}}>
+          {[["#16a34a","≥ 80 pts"],["#d97706","≥ 68 pts"],["#dc2626","< 68 pts"]].map(([c,l])=>(
+            <div key={l} style={{display:"flex",alignItems:"center",gap:4,fontSize:10}}>
+              <span style={{width:10,height:10,borderRadius:2,background:c,display:"inline-block"}}/>
+              <span style={{color:"var(--text3)"}}>{l}</span>
+            </div>
+          ))}
+          <span style={{fontSize:9,color:"#f59e0b"}}>— meta 80</span>
+        </div>
+      </div>
+
+      <div style={{flex:1,overflowX:"auto",overflowY:"auto",padding:"14px 18px"}}>
+        {allDays.length===0
+          ?<div style={{color:"var(--text4)",textAlign:"center",padding:40,fontSize:13}}>Sem dados para {scope} · {mesLabel}</div>
+          :<table style={{borderCollapse:"collapse",minWidth:700}}>
+            <thead>
+              <tr style={{background:"var(--bg2)"}}>
+                <th style={{padding:"7px 10px",textAlign:"left",fontSize:11,color:"var(--text3)",fontWeight:700,
+                  position:"sticky",left:0,background:"var(--bg2)",borderBottom:"1px solid var(--border)",
+                  minWidth:100,zIndex:3}}>Polo</th>
+                <th style={{padding:"7px 8px",textAlign:"center",fontSize:11,color:"var(--text3)",fontWeight:700,
+                  position:"sticky",left:100,background:"var(--bg2)",borderBottom:"1px solid var(--border)",
+                  minWidth:90,zIndex:3}}>Tipo</th>
+                <th style={{padding:"7px 7px",textAlign:"center",fontSize:11,color:"var(--out-t)",fontWeight:700,
+                  minWidth:52,borderBottom:"1px solid var(--border)"}}>{MN[prev]||"—"}</th>
+                {allDays.map(d=>{
+                  const day=parseInt(d.split("-")[2]);
+                  const wd=new Date(d+"T12:00:00").toLocaleDateString("pt-BR",{weekday:"short"}).replace(".","");
+                  return(
+                    <th key={d} style={{padding:"4px 2px",textAlign:"center",fontSize:9,
+                      color:"var(--text3)",fontWeight:600,minWidth:38,borderBottom:"1px solid var(--border)"}}>
+                      <div style={{fontSize:8,color:"var(--text4)"}}>{wd}</div>
+                      <div>{day}</div>
+                    </th>
+                  );
+                })}
+                <th style={{padding:"7px 7px",textAlign:"center",fontSize:11,color:"#22d3ee",
+                  fontWeight:700,minWidth:58,borderBottom:"1px solid var(--border)"}}>
+                  MTD {mesLabel}
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {polos.map((polo,pi)=>
+                TIPOS.map((tipo,ti)=>{
+                  const daily = pontosDaily[selectedMes]?.[polo]?.[tipo]?.[processo]||{};
+                  const mtd = getMTD(polo, tipo);
+                  const prevMTD = getPrevMTD(polo, tipo);
+                  const diff = (mtd!=null&&prevMTD!=null)?mtd-prevMTD:null;
+                  const isIns = tipo==="Insourcing";
+                  const isFirstTipo = ti===0;
+                  const bg = pi%2===0?"var(--bg0)":"var(--bg1)";
+                  const tipoBg = isIns?(dark?"#1e3a8a18":"#dbeafe44"):(dark?"#4c1d9518":"#ede9fe44");
+                  return(
+                    <tr key={`${polo}-${tipo}`} style={{
+                      background: isFirstTipo ? bg : tipoBg,
+                      borderTop: isFirstTipo&&pi>0 ? "2px solid var(--border2)" : "none"
+                    }}>
+                      {/* POLO — rowspan 2 */}
+                      {isFirstTipo&&(
+                        <td rowSpan={2} style={{padding:"6px 10px",fontWeight:700,fontSize:13,
+                          color:"var(--text1)",background:bg,border:"1px solid var(--border)",
+                          borderTop:pi>0?"2px solid var(--border2)":"",
+                          position:"sticky",left:0,zIndex:2,verticalAlign:"middle",textAlign:"center"}}>
+                          {polo}
+                        </td>
+                      )}
+                      {/* TIPO */}
+                      <td style={{padding:"5px 8px",fontWeight:700,fontSize:12,
+                        color:isIns?"var(--ins-t)":"var(--out-t)",
+                        background:tipoBg,border:"1px solid var(--border)",
+                        position:"sticky",left:100,zIndex:2,whiteSpace:"nowrap",textAlign:"center"}}>
+                        {tipo}
+                      </td>
+                      {/* PREV MTD */}
+                      <td style={{padding:"4px 4px",textAlign:"center",border:"1px solid var(--border)"}}>
+                        {scoreChip(prevMTD)}
+                      </td>
+                      {/* DAILY */}
+                      {allDays.map(d=>(
+                        <td key={d} style={{padding:"3px 2px",textAlign:"center",border:"1px solid var(--border)"}}>
+                          {scoreChip(daily[d]??null)}
+                        </td>
+                      ))}
+                      {/* MTD */}
+                      <td style={{padding:"4px 5px",textAlign:"center",border:"2px solid var(--border2)",
+                        background:"var(--bg2)"}}>
+                        <div>{scoreChip(mtd,"md")}</div>
+                        {diff!=null&&<div style={{fontSize:9,color:diff>0?"#22c55e":"#f87171",fontWeight:600,marginTop:2}}>
+                          {diff>0?"+":""}{diff.toFixed(1)} vs {MN[prev]||prev}
+                        </div>}
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
+        }
+      </div>
+    </div>
+  );
+}
+
+
+/* ══ TAB RESUMO SEMANAL ══ */
+function TabSemanal({selectedMes, semanalData, metas, pontosData, processo, dark}){
+  const [scope, setScope] = useState("UTS");
+  const [viewMode, setViewMode] = useState("ut");
+  const [selPolo, setSelPolo] = useState("Niterói");
+  const SC2 = dark ? SC_DARK : SC_LIGHT;
+  const mesLabel = MN[selectedMes]||selectedMes;
+  const polos = scope==="UTS" ? UTS : UTN;
+
+  const weeks = useMemo(()=>{
+    const ws = new Set();
+    const checkPolos = viewMode==="polo" ? [selPolo] : polos;
+    for(const polo of checkPolos)
+      for(const tipo of TIPOS)
+        Object.keys(semanalData[selectedMes]?.[polo]?.[tipo]?.[processo]||{}).forEach(w=>ws.add(w));
+    return [...ws].sort((a,b)=>parseInt(a)-parseInt(b));
+  },[semanalData, selectedMes, scope, viewMode, selPolo]);
+
+  function weekDateRange(wk){
+    for(const polo of [...UTS,...UTN])
+      for(const tipo of TIPOS){
+        const w = semanalData[selectedMes]?.[polo]?.[tipo]?.[processo]?.[wk];
+        if(w?.d_ini) return `${w.d_ini.slice(5)} – ${w.d_fim.slice(5)}`;
+      }
+    return "";
+  }
+
+  function getAggWeekVal(tipo, wk, key){
+    const vals = [];
+    for(const polo of polos){
+      const v = semanalData[selectedMes]?.[polo]?.[tipo]?.[processo]?.[wk]?.[key];
+      if(v!=null) vals.push(v);
+    }
+    return vals.length ? Math.round(vals.reduce((a,b)=>a+b,0)/vals.length*10)/10 : null;
+  }
+  function getPoloWeekVal(polo, tipo, wk, key){
+    return semanalData[selectedMes]?.[polo]?.[tipo]?.[processo]?.[wk]?.[key]??null;
+  }
+  function getMTDPontos(polo, tipo){
+    return pontosData[selectedMes]?.[polo]?.[tipo]?.[processo]?.total??null;
+  }
+
+  // ── Shared chart: barras por semana (Ins=azul, Out=roxo) + linha meta ──
+  function SemChart({kpiKey, getVal, meta, label, unit, dark}){
+    const TCOL={Insourcing:"#3b82f6",Outsourcing:"#a855f7"};
+    const allVals=[...weeks.flatMap(wk=>TIPOS.map(t=>getVal(t,wk)).filter(v=>v!=null)),meta];
+    const maxV=Math.max(...allVals)*1.15||1;
+    const W=500,H=155,PL=32,PR=36,PT=14,PB=40;
+    const cW=W-PL-PR,cH=H-PT-PB;
+    const toY=v=>PT+cH-(Math.max(0,v/maxV)*cH);
+    const metaY=toY(meta);
+    const n=weeks.length;
+    const grpW=cW/n;
+    const barW=Math.min(26,grpW*0.34);
+    const gridColor=dark?"#1a2e4a":"#e2eaf5";
+    const lblColor=dark?"#2d5a8e":"#94adc8";
+    const wkColor=dark?"#4b7ba8":"#64748b";
+    return(
+      <svg viewBox={`0 0 ${W} ${H}`} style={{width:"100%",maxWidth:W,display:"block"}}>
+        {[0,.25,.5,.75,1].map(f=>{
+          const yy=PT+cH*(1-f);
+          return<g key={f}>
+            <line x1={PL} y1={yy} x2={W-PR} y2={yy} stroke={gridColor} strokeWidth={0.7}/>
+            <text x={PL-3} y={yy+3} textAnchor="end" fontSize={8} fill={lblColor}>{(maxV*f).toFixed(1)}</text>
+          </g>;
+        })}
+        <line x1={PL} y1={metaY} x2={W-PR} y2={metaY}
+          stroke="#f59e0b" strokeWidth={1.5} strokeDasharray="5,3" opacity={0.9}/>
+        <text x={W-PR+2} y={metaY+3} fontSize={8} fill="#f59e0b" fontWeight="600">Meta</text>
+        {weeks.map((wk,wi)=>{
+          const cx=PL+wi*grpW+grpW/2;
+          return<g key={wk}>
+            {TIPOS.map((tipo,ti)=>{
+              const val=getVal(tipo,wk);
+              if(val===null)return null;
+              const x=cx+(ti===0?-barW-1:1);
+              const y=toY(val);
+              const bh=Math.max(1,toY(0)-y);
+              const bc=TCOL[tipo];
+              return<g key={tipo}>
+                <rect x={x} y={y} width={barW} height={bh} fill={bc} opacity={0.88} rx={2}/>
+                <text x={x+barW/2} y={y-2} textAnchor="middle" fontSize={7} fill={bc} fontWeight="bold">{val.toFixed(1)}</text>
+              </g>;
+            })}
+            <text x={cx} y={H-PB+13} textAnchor="middle" fontSize={9} fill={wkColor}>Sem{wk}</text>
+            <text x={cx} y={H-PB+23} textAnchor="middle" fontSize={7} fill={lblColor}>{weekDateRange(wk)}</text>
+          </g>;
+        })}
+        {TIPOS.map((tipo,ti)=>(
+          <g key={tipo} transform={`translate(${PL+ti*95},${H-PB+32})`}>
+            <rect width={10} height={10} fill={TCOL[tipo]} rx={2} opacity={0.85}/>
+            <text x={13} y={8.5} fontSize={8.5} fill={dark?"#7db8e8":"#2d5a8e"}>{tipo}</text>
+          </g>
+        ))}
+      </svg>
+    );
+  }
+
+  // Score chart: verde/laranja/vermelho por pontuação
+  function ScoreChart({getVal, dark}){
+    const TCOL={Insourcing:"#3b82f6",Outsourcing:"#a855f7"};
+    const meta=80;
+    const allVals=[...weeks.flatMap(wk=>TIPOS.map(t=>getVal(t,wk)).filter(v=>v!=null)),meta];
+    const maxV=Math.max(...allVals)*1.15||100;
+    const W=500,H=155,PL=32,PR=36,PT=14,PB=40;
+    const cW=W-PL-PR,cH=H-PT-PB;
+    const toY=v=>PT+cH-(Math.max(0,v/maxV)*cH);
+    const metaY=toY(meta);
+    const n=weeks.length;
+    const grpW=cW/n;
+    const barW=Math.min(26,grpW*0.34);
+    const gridColor=dark?"#1a2e4a":"#e2eaf5";
+    const lblColor=dark?"#2d5a8e":"#94adc8";
+    const wkColor=dark?"#4b7ba8":"#64748b";
+    return(
+      <svg viewBox={`0 0 ${W} ${H}`} style={{width:"100%",maxWidth:W,display:"block"}}>
+        {[0,.25,.5,.75,1].map(f=>{
+          const yy=PT+cH*(1-f);
+          return<g key={f}>
+            <line x1={PL} y1={yy} x2={W-PR} y2={yy} stroke={gridColor} strokeWidth={0.7}/>
+            <text x={PL-3} y={yy+3} textAnchor="end" fontSize={8} fill={lblColor}>{(maxV*f).toFixed(0)}</text>
+          </g>;
+        })}
+        <line x1={PL} y1={metaY} x2={W-PR} y2={metaY}
+          stroke="#f59e0b" strokeWidth={1.5} strokeDasharray="5,3" opacity={0.9}/>
+        <text x={W-PR+2} y={metaY+3} fontSize={8} fill="#f59e0b" fontWeight="600">80</text>
+        {weeks.map((wk,wi)=>{
+          const cx=PL+wi*grpW+grpW/2;
+          return<g key={wk}>
+            {TIPOS.map((tipo,ti)=>{
+              const val=getVal(tipo,wk);
+              if(val===null)return null;
+              const x=cx+(ti===0?-barW-1:1);
+              const y=toY(val);
+              const bh=Math.max(1,toY(0)-y);
+              const bc=TCOL[tipo];
+              return<g key={tipo}>
+                <rect x={x} y={y} width={barW} height={bh} fill={bc} opacity={0.88} rx={2}/>
+                <text x={x+barW/2} y={y-2} textAnchor="middle" fontSize={7} fill={bc} fontWeight="bold">{val.toFixed(1)}</text>
+              </g>;
+            })}
+            <text x={cx} y={H-PB+13} textAnchor="middle" fontSize={9} fill={wkColor}>Sem{wk}</text>
+            <text x={cx} y={H-PB+23} textAnchor="middle" fontSize={7} fill={lblColor}>{weekDateRange(wk)}</text>
+          </g>;
+        })}
+        {TIPOS.map((tipo,ti)=>(
+          <g key={tipo} transform={`translate(${PL+ti*95},${H-PB+32})`}>
+            <rect width={10} height={10} fill={TCOL[tipo]} rx={2} opacity={0.85}/>
+            <text x={13} y={8.5} fontSize={8.5} fill={dark?"#7db8e8":"#2d5a8e"}>{tipo}</text>
+          </g>
+        ))}
+      </svg>
+    );
+  }
+
+  function KpiChip({val, meta, k}){ return <Chip val={val} meta={meta} k={k} dark={dark}/>; }
+  function ScChip({val}){
+    if(val===null||val===undefined) return <span style={{color:"var(--text5)",fontSize:11}}>—</span>;
+    const bg=val>=80?"#16a34a":val>=68?"#d97706":"#dc2626";
+    return <span style={{display:"inline-block",background:bg,color:"#fff",borderRadius:4,
+      padding:"2px 5px",fontSize:11,fontWeight:700,minWidth:36,textAlign:"center"}}>{val.toFixed(1)}</span>;
+  }
+
+  // ── Section header ──
+  function SectionHead({label}){
+    return(
+      <div style={{fontSize:12,fontWeight:700,color:"var(--text2)",marginBottom:10,
+        padding:"6px 12px",background:"var(--bg2)",borderRadius:8,display:"inline-block"}}>
+        {label}
+      </div>
+    );
+  }
+
+  // ── KPI table ──
+  function KpiTable({getVal, weeks: wks}){
+    return(
+      <div style={{overflowX:"auto",marginBottom:8}}>
+        <table style={{borderCollapse:"collapse",width:"100%"}}>
+          <thead>
+            <tr style={{background:"var(--bg2)"}}>
+              <th style={{padding:"6px 12px",textAlign:"left",fontSize:11,color:"var(--text3)",fontWeight:700,
+                position:"sticky",left:0,background:"var(--bg2)",borderBottom:"1px solid var(--border)",minWidth:110}}>KPI</th>
+              <th style={{padding:"6px 7px",textAlign:"center",fontSize:11,color:"var(--meta)",fontWeight:700,
+                minWidth:46,borderBottom:"1px solid var(--border)"}}>META</th>
+              {TIPOS.map(tipo=>(
+                <th key={tipo} colSpan={wks.length} style={{padding:"5px 4px",textAlign:"center",
+                  fontSize:11,fontWeight:700,borderLeft:"2px solid var(--border2)",
+                  borderBottom:"1px solid var(--border)",
+                  color:tipo==="Insourcing"?"var(--ins-t)":"var(--out-t)"}}>
+                  {tipo}
+                </th>
+              ))}
+            </tr>
+            <tr style={{background:"var(--bg1)"}}>
+              <th style={{position:"sticky",left:0,background:"var(--bg1)"}}/><th/>
+              {TIPOS.map(tipo=>wks.map(wk=>(
+                <th key={`${tipo}-${wk}`} style={{padding:"3px 4px",textAlign:"center",fontSize:9,
+                  color:"var(--text3)",fontWeight:600,minWidth:80,
+                  borderLeft:wk===wks[0]?"2px solid var(--border2)":"1px solid var(--border)",
+                  borderBottom:"1px solid var(--border)"}}>
+                  <div style={{fontWeight:700,color:"var(--text2)"}}>Sem {wk}</div>
+                  <div style={{fontSize:8,color:"var(--text4)"}}>{weekDateRange(wk)}</div>
+                </th>
+              )))}
+            </tr>
+          </thead>
+          <tbody>
+            {KPI_KEYS.map((k,ki)=>{
+              const meta=metas[k];
+              const bg=ki%2===0?"var(--bg0)":"var(--bg1)";
+              return(
+                <tr key={k} style={{background:bg}}>
+                  <td style={{padding:"5px 12px",fontSize:12,fontWeight:600,color:"var(--text1)",
+                    background:bg,border:"1px solid var(--border)",position:"sticky",left:0,whiteSpace:"nowrap"}}>
+                    {KPI_LBL[k]}<span style={{fontSize:9,color:"var(--text4)",marginLeft:3}}>{KPI_UNIT[k]}</span>
+                  </td>
+                  <td style={{padding:"4px 6px",textAlign:"center",border:"1px solid var(--border)"}}>
+                    <span style={{color:"var(--meta)",fontWeight:700,fontSize:12}}>{meta}</span>
+                  </td>
+                  {TIPOS.map(tipo=>wks.map((wk,wi)=>(
+                    <td key={`${tipo}-${wk}`} style={{padding:"4px 3px",textAlign:"center",
+                      borderLeft:wi===0?"2px solid var(--border2)":"1px solid var(--border)",
+                      borderTop:"1px solid var(--border)"}}>
+                      <KpiChip val={getVal(tipo,wk,k)} meta={meta} k={k}/>
+                    </td>
+                  )))}
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    );
+  }
+
+  // ── Pontuação table ──
+  function PontosTable({polosArr, getVal, getValMTD, weeks: wks}){
+    return(
+      <div style={{overflowX:"auto",marginBottom:8}}>
+        <table style={{borderCollapse:"collapse",width:"100%"}}>
+          <thead>
+            <tr style={{background:"var(--bg2)"}}>
+              <th style={{padding:"6px 10px",textAlign:"left",fontSize:11,color:"var(--text3)",fontWeight:700,
+                position:"sticky",left:0,background:"var(--bg2)",borderBottom:"1px solid var(--border)",minWidth:110}}>Polo</th>
+              <th style={{padding:"6px 8px",textAlign:"center",fontSize:11,color:"var(--text3)",fontWeight:700,
+                minWidth:86,borderBottom:"1px solid var(--border)"}}>Tipo</th>
+              {wks.map(wk=>(
+                <th key={wk} style={{padding:"4px 6px",textAlign:"center",fontSize:10,
+                  color:"var(--accent)",fontWeight:700,minWidth:80,
+                  borderLeft:"1px solid var(--border)",borderBottom:"1px solid var(--border)"}}>
+                  <div>Sem {wk}</div>
+                  <div style={{fontSize:8,color:"var(--text4)"}}>{weekDateRange(wk)}</div>
+                </th>
+              ))}
+              <th style={{padding:"6px 7px",textAlign:"center",fontSize:11,color:"#22d3ee",
+                fontWeight:700,minWidth:60,borderBottom:"1px solid var(--border)"}}>MTD</th>
+            </tr>
+          </thead>
+          <tbody>
+            {polosArr.map((polo,pi)=>
+              TIPOS.map((tipo,ti)=>{
+                const isIns=tipo==="Insourcing";
+                const bg=pi%2===0?"var(--bg0)":"var(--bg1)";
+                const tipoBg=isIns?(dark?"#1e3a8a18":"#dbeafe44"):(dark?"#4c1d9518":"#ede9fe44");
+                return(
+                  <tr key={`${polo}-${tipo}`} style={{
+                    background:ti===0?bg:tipoBg,
+                    borderTop:ti===0&&pi>0?"2px solid var(--border2)":"none"}}>
+                    {ti===0&&(
+                      <td rowSpan={2} style={{padding:"5px 10px",fontWeight:700,fontSize:13,
+                        color:"var(--text1)",background:bg,border:"1px solid var(--border)",
+                        borderTop:pi>0?"2px solid var(--border2)":"",
+                        position:"sticky",left:0,zIndex:2,verticalAlign:"middle",textAlign:"center"}}>
+                        {polo}
+                      </td>
+                    )}
+                    <td style={{padding:"4px 8px",fontWeight:700,fontSize:11,
+                      color:isIns?"var(--ins-t)":"var(--out-t)",
+                      background:tipoBg,border:"1px solid var(--border)",textAlign:"center",whiteSpace:"nowrap"}}>
+                      {tipo}
+                    </td>
+                    {wks.map(wk=>(
+                      <td key={wk} style={{padding:"4px 3px",textAlign:"center",
+                        borderLeft:"1px solid var(--border)",borderTop:"1px solid var(--border)"}}>
+                        <ScChip val={getVal(polo,tipo,wk)}/>
+                      </td>
+                    ))}
+                    <td style={{padding:"4px 5px",textAlign:"center",
+                      border:"1px solid var(--border)",background:"var(--bg2)"}}>
+                      <ScChip val={getValMTD(polo,tipo)}/>
+                    </td>
+                  </tr>
+                );
+              })
+            )}
+          </tbody>
+        </table>
+      </div>
+    );
+  }
+
+  // ── KPI charts grid ──
+  function KpiCharts({getVal}){
+    return(
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(480px,1fr))",gap:13,marginBottom:8}}>
+        {KPI_KEYS.map(k=>(
+          <div key={k} style={{background:"var(--bg1)",border:"1px solid var(--border)",borderRadius:12,padding:"13px 15px"}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+              <span style={{fontWeight:700,fontSize:13,color:"var(--text1)"}}>
+                {KPI_LBL[k]}<span style={{fontSize:10,color:"var(--text4)",marginLeft:5}}>{KPI_UNIT[k]}</span>
+              </span>
+              <span style={{fontSize:10,color:"var(--meta)"}}>Meta: {metas[k]} {KPI_UNIT[k]}</span>
+            </div>
+            <SemChart kpiKey={k} getVal={(tipo,wk)=>getVal(tipo,wk,k)}
+              meta={metas[k]} label={KPI_LBL[k]} unit={KPI_UNIT[k]} dark={dark}/>
+          </div>
+        ))}
+      </div>
+    );
+  }
+
+  // ── Score chart panel ──
+  function ScoreChartPanel({getVal}){
+    return(
+      <div style={{background:"var(--bg1)",border:"1px solid var(--border)",borderRadius:12,padding:"13px 15px",marginBottom:8}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+          <span style={{fontWeight:700,fontSize:13,color:"var(--text1)"}}>🏆 Pontuação Média</span>
+          <span style={{fontSize:10,color:"#f59e0b"}}>Meta: 80 pts</span>
+        </div>
+        <ScoreChart getVal={getVal} dark={dark}/>
+      </div>
+    );
+  }
+
+  // ── VIEW: por UT ──
+  function ViewUT(){
+    const aggKpi=(tipo,wk,k)=>getAggWeekVal(tipo,wk,k);
+    const aggPts=(tipo,wk)=>getAggWeekVal(tipo,wk,'pontos');
+    const aggPtsMTD=(polo,tipo)=>getMTDPontos(polo,tipo);
+    return(
+      <div>
+        <SectionHead label={`📊 KPIs de Performance · ${scope} · ${mesLabel}`}/>
+        <KpiTable getVal={aggKpi} weeks={weeks}/>
+        <KpiCharts getVal={aggKpi}/>
+        <SectionHead label={`🏆 Pontuação das Equipes · ${scope} · ${mesLabel}`}/>
+        <ScoreChartPanel getVal={aggPts}/>
+        <PontosTable polosArr={polos}
+          getVal={(polo,tipo,wk)=>getPoloWeekVal(polo,tipo,wk,'pontos')}
+          getValMTD={aggPtsMTD} weeks={weeks}/>
+      </div>
+    );
+  }
+
+  // ── VIEW: por polo ──
+  function ViewPolo(){
+    const weeks_polo=[...new Set(
+      TIPOS.flatMap(tipo=>Object.keys(semanalData[selectedMes]?.[selPolo]?.[tipo]||{}))
+    )].sort((a,b)=>parseInt(a)-parseInt(b));
+    const poloKpi=(tipo,wk,k)=>getPoloWeekVal(selPolo,tipo,wk,k);
+    const poloPts=(tipo,wk)=>getPoloWeekVal(selPolo,tipo,wk,'pontos');
+    return(
+      <div>
+        <SectionHead label={`📊 KPIs · ${selPolo} · ${mesLabel}`}/>
+        <KpiTable getVal={poloKpi} weeks={weeks_polo}/>
+        <KpiCharts getVal={poloKpi}/>
+        <SectionHead label={`🏆 Pontuação · ${selPolo} · ${mesLabel}`}/>
+        <ScoreChartPanel getVal={poloPts}/>
+        <PontosTable polosArr={[selPolo]}
+          getVal={(polo,tipo,wk)=>getPoloWeekVal(polo,tipo,wk,'pontos')}
+          getValMTD={(polo,tipo)=>getMTDPontos(polo,tipo)} weeks={weeks_polo}/>
+      </div>
+    );
+  }
+
+  return(
+    <div className="fade" style={{display:"flex",flexDirection:"column",flex:1}}>
+      <div style={{padding:"10px 18px",background:"var(--bg1)",borderBottom:"1px solid var(--border)",
+        display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
+        <div style={{display:"flex",gap:3,background:"var(--bg2)",borderRadius:7,padding:2}}>
+          {["UTS","UTN"].map(s=>(
+            <button key={s} onClick={()=>{setScope(s);setViewMode("ut");}} style={{
+              padding:"5px 16px",borderRadius:5,border:"none",cursor:"pointer",fontWeight:700,fontSize:13,
+              background:scope===s&&viewMode==="ut"?"var(--accent)":"transparent",
+              color:scope===s&&viewMode==="ut"?"#fff":"var(--text3)"}}>
+              {s}
+            </button>
+          ))}
+        </div>
+        <span style={{color:"var(--text5)"}}>|</span>
+        {[...UTS,...UTN].map(p=>{
+          const active=viewMode==="polo"&&selPolo===p;
+          const hasData=Object.keys(semanalData[selectedMes]?.[p]||{}).length>0;
+          return(
+            <button key={p} onClick={()=>{setViewMode("polo");setSelPolo(p);
+              setScope(UTS.includes(p)?"UTS":"UTN");}} style={{
+              padding:"4px 12px",borderRadius:20,
+              border:`1px solid ${active?"var(--accent)":"var(--border)"}`,
+              cursor:hasData?"pointer":"default",fontWeight:600,fontSize:12,
+              background:active?"var(--accent)":"var(--tag-bg)",
+              color:active?"#fff":hasData?"var(--text3)":"var(--text5)",
+              opacity:hasData?1:0.4}}>
+              {p==="São Gonçalo"?"S.Gonçalo":p}
+            </button>
+          );
+        })}
+        <span style={{fontSize:11,color:"var(--text4)",marginLeft:4}}>
+          <strong style={{color:"var(--text1)"}}>{mesLabel}</strong>
+        </span>
+      </div>
+      <div style={{flex:1,overflowX:"auto",overflowY:"auto",padding:"14px 18px"}}>
+        {viewMode==="ut" ? <ViewUT/> : <ViewPolo/>}
+      </div>
+    </div>
+  );
+}
+
+
+/* ══ APP ══ */
+function App(){
+  const [kpiData,setKpiData]=useState(EMBEDDED);
+  const [pontosData,setPontosData]=useState(PONTOS_DATA);
+  const [pontosDaily,setPontosDaily]=useState(PONTOS_DAILY);
+  const [semanalData,setSemanalData]=useState(SEMANAL_DATA);
+  const [uploadMsg,setUploadMsg]=useState("");
+  const [uploading,setUploading]=useState(false);
+  const [metas,setMetas]=useState(DEF_META);
+  const [showMetas,setShowMetas]=useState(false);
+  const [tmpMetas,setTmpMetas]=useState(DEF_META);
+  const [tab,setTab]=useState("painel");
+  const [selectedMes,setSelectedMes]=useState("");
+  const [selectedUT,setSelectedUT]=useState("UTS");
+  const [processo,setProcesso]=useState("Op+Extra");
+  const [dark,setDark]=useState(true);
+  const [allDates,setAllDates]=useState([]);
+  const [selDays,setSelDays]=useState([]);
+  const fileRef=useRef();
+  const wbRef=useRef(null);
+
+  const toggleTheme=useCallback(()=>{
+    setDark(d=>{
+      document.body.className=d?"light":"dark";
+      return!d;
+    });
+  },[]);
+
+  const mesesDisp=useMemo(()=>Object.keys(kpiData).sort((a,b)=>parseInt(a)-parseInt(b)),[kpiData]);
+  const hasData=mesesDisp.length>0;
+
+  useEffect(()=>{
+    if(mesesDisp.length && !mesesDisp.includes(selectedMes)){
+      setSelectedMes(mesesDisp[mesesDisp.length-1]);
+    }
+  },[mesesDisp,selectedMes]);
+
+  const applyParsed=useCallback((parsed)=>{
+    setKpiData(parsed.kpi||{});
+    setPontosData(parsed.pontos||{});
+    setPontosDaily(parsed.pontosDaily||{});
+    setSemanalData(parsed.semanalData||{});
+  },[]);
+
+  // re-processa a base quando o filtro de dias muda (afeta todas as abas)
+  useEffect(()=>{
+    if(!wbRef.current) return;
+    const parsed=parseXLSX(wbRef.current, selDays);
+    if(!parsed){
+      setKpiData({});setPontosData({});setPontosDaily({});setSemanalData({});
+      setUploadMsg("⚠️ Nenhum dado para os dias selecionados.");
+    }else{
+      applyParsed(parsed);
+    }
+  },[selDays,applyParsed]);
+
+  const handleFile=useCallback(async(e)=>{
+    const file=e.target.files[0];if(!file)return;
+    setUploading(true);setUploadMsg("Lendo planilha...");
+    try{
+      const buf=await file.arrayBuffer();
+      const wb=XLSX.read(buf,{type:"array",cellDates:true});
+      setUploadMsg("Processando dados...");
+      await new Promise(r=>setTimeout(r,60));
+      const parsed=parseXLSX(wb);
+      if(!parsed||!Object.keys(parsed.kpi||{}).length){
+        setUploadMsg("❌ Não foi possível ler os dados. Verifique a planilha.");
+      }else{
+        wbRef.current=wb;
+        setSelDays([]);
+        setAllDates(parsed.allDates||[]);
+        setKpiData(parsed.kpi);
+        if(parsed.pontos&&Object.keys(parsed.pontos).length) setPontosData(parsed.pontos);
+        if(parsed.pontosDaily&&Object.keys(parsed.pontosDaily).length) setPontosDaily(parsed.pontosDaily);
+        if(parsed.semanalData&&Object.keys(parsed.semanalData).length) setSemanalData(parsed.semanalData);
+        const ms=Object.keys(parsed.kpi).sort((a,b)=>parseInt(a)-parseInt(b));
+        setSelectedMes(ms[ms.length-1]);
+        setUploadMsg(`✅ ${file.name} — ${ms.length} mês(es): ${ms.map(m=>MN[m]||m).join(", ")}`);
+      }
+    }catch(err){setUploadMsg("❌ Erro: "+err.message);}
+    setUploading(false);e.target.value="";
+  },[]);
+
+  return(
+    <div style={{minHeight:"100vh",display:"flex",flexDirection:"column"}}>
+      {/* TOP BAR */}
+      <div style={{background:"var(--bg2)",borderBottom:"1px solid var(--border)",
+        padding:"12px 18px",display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:9}}>
+        <div style={{display:"flex",alignItems:"center",gap:11}}>
+          <div style={{width:35,height:35,borderRadius:9,background:"linear-gradient(135deg,#1d4ed8,#0ea5e9)",
+            display:"flex",alignItems:"center",justifyContent:"center",fontSize:18}}>⚡</div>
+          <div>
+            <div style={{fontWeight:700,fontSize:15,color:"var(--text0)",letterSpacing:"-.3px"}}>Scanner 4.0 · Performance RJ</div>
+            <div style={{fontSize:11,color:"var(--text3)",fontFamily:"'IBM Plex Mono',monospace"}}>
+              {mesesDisp.map(m=>MN[m]||m).join(" · ")}
+            </div>
+          </div>
+        </div>
+        <div style={{display:"flex",gap:7,alignItems:"center",flexWrap:"wrap"}}>
+          <label style={{display:"flex",alignItems:"center",gap:5,cursor:"pointer",
+            background:"var(--tag-bg)",border:"1px dashed var(--border2)",borderRadius:8,
+            padding:"5px 12px",fontSize:12,color:"var(--text2)"}}>
+            {uploading?"⏳ Processando...":"📂 Carregar Base (.xlsx)"}
+            <input ref={fileRef} type="file" accept=".xlsx,.xlsm,.xls" onChange={handleFile} style={{display:"none"}}/>
+          </label>
+          {(tab==="painel"||tab==="evolucao")&&(
+            <div style={{display:"flex",gap:3,background:"var(--tag-bg)",borderRadius:7,padding:2}}>
+              {["UTS","UTN"].map(ut=>(
+                <button key={ut} onClick={()=>setSelectedUT(ut)} style={{
+                  padding:"4px 13px",borderRadius:5,border:"none",cursor:"pointer",fontWeight:700,fontSize:12,
+                  background:selectedUT===ut?"var(--accent)":"transparent",
+                  color:selectedUT===ut?"#fff":"var(--text3)"}}>
+                  {ut}
+                </button>
+              ))}
+            </div>
+          )}
+          {(tab==="painel"||tab==="diario"||tab==="comparativo"||tab==="report"||tab==="pontos"||tab==="pontos_dia"||tab==="semanal")&&(
+            <select value={selectedMes} onChange={e=>setSelectedMes(e.target.value)}
+              style={{background:"var(--tag-bg)",color:"var(--text0)",border:"1px solid var(--border2)",
+                borderRadius:7,padding:"5px 10px",fontSize:13,cursor:"pointer"}}>
+              {mesesDisp.map(m=><option key={m} value={m}>{MN[m]||m}</option>)}
+            </select>
+          )}
+          {(tab==="painel"||tab==="diario"||tab==="comparativo"||tab==="report"||tab==="pontos"||tab==="pontos_dia"||tab==="semanal")&&(
+            <DiasFilter allDates={allDates} selectedMes={selectedMes} value={selDays} onChange={setSelDays}/>
+          )}
+          <button onClick={()=>{setTmpMetas({...metas});setShowMetas(true);}}
+            style={{padding:"5px 12px",borderRadius:7,border:"1px solid var(--border2)",
+              background:"var(--tag-bg)",color:"var(--text2)",cursor:"pointer",fontSize:12,fontWeight:600}}>
+            ⚙️ Metas
+          </button>
+          <ThemeToggle dark={dark} onToggle={toggleTheme}/>
+        </div>
+      </div>
+
+      {/* upload msg */}
+      {uploadMsg&&(
+        <div style={{background:"var(--bg1)",borderBottom:"1px solid var(--border)",
+          padding:"6px 18px",fontSize:12,color:uploadMsg.includes("❌")?"#f87171":"#4ade80",
+          display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+          {uploadMsg}
+          <button onClick={()=>setUploadMsg("")} style={{color:"var(--text4)",background:"none",border:"none",cursor:"pointer",fontSize:13}}>✕</button>
+        </div>
+      )}
+
+      {/* PROCESSO FILTER — sempre visível */}
+      <div style={{background:"var(--bg1)",borderBottom:"1px solid var(--border)",padding:"8px 18px"}}>
+        <ProcessoFilter value={processo} onChange={setProcesso}/>
+      </div>
+
+      {/* TABS */}
+      <div style={{background:"var(--bg2)",borderBottom:"1px solid var(--border)",padding:"0 18px",display:"flex",gap:0}}>
+        {[["painel","🗺 Painel por UT"],["comparativo","📊 Comparativo Polos"],["evolucao","📈 Evolução Mensal"],["diario","📅 Resumo Diário"],["report","📋 Report Diário"],["pontos","🏆 Pontuação"],["pontos_dia","📈 Pont. Diária"],["semanal","📆 Resumo Semanal"]].map(([id,lbl])=>(
+          <button key={id} onClick={()=>setTab(id)} style={{
+            padding:"10px 17px",border:"none",background:"transparent",cursor:"pointer",
+            fontSize:13,fontWeight:600,color:tab===id?"var(--accent)":"var(--text3)",
+            borderBottom:tab===id?"2px solid var(--accent)":"2px solid transparent"}}>
+            {lbl}
+          </button>
+        ))}
+      </div>
+
+      {!hasData ? (
+        <div style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",padding:"60px 20px"}}>
+          <div style={{textAlign:"center",maxWidth:480}}>
+            <div style={{fontSize:48,marginBottom:12}}>📊</div>
+            <div style={{fontSize:18,fontWeight:700,color:"var(--text1)",marginBottom:8}}>Nenhuma base carregada</div>
+            <div style={{fontSize:13,color:"var(--text3)",lineHeight:1.6}}>
+              Clique em <strong style={{color:"var(--text1)"}}>📂 Carregar Base (.xlsx)</strong> no topo da página para importar sua planilha e visualizar os indicadores.
+            </div>
+          </div>
+        </div>
+      ) : (<>
+      {tab==="painel"&&<TabPainel kpiData={kpiData} metas={metas} selectedUT={selectedUT} selectedMes={selectedMes} processo={processo} dark={dark}/>}
+      {tab==="comparativo"&&<TabComparativo kpiData={kpiData} metas={metas} selectedMes={selectedMes} processo={processo} dark={dark}/>}
+      {tab==="evolucao"&&<TabEvolucao kpiData={kpiData} metas={metas} selectedUT={selectedUT} processo={processo} dark={dark} pontosData={pontosData}/>}
+      {tab==="diario"&&<TabDiario kpiData={kpiData} metas={metas} selectedMes={selectedMes} processo={processo} dark={dark}/>}
+      {tab==="report"&&<TabReport kpiData={kpiData} metas={metas} selectedMes={selectedMes} processo={processo} dark={dark}/>}
+      {tab==="pontos"&&<TabPontos pontosData={pontosData} selectedMes={selectedMes} processo={processo} dark={dark}/>}
+      {tab==="pontos_dia"&&<TabPontosDiario selectedMes={selectedMes} pontosDaily={pontosDaily} pontosData={pontosData} processo={processo} dark={dark}/>}
+      {tab==="semanal"&&<TabSemanal selectedMes={selectedMes} semanalData={semanalData} metas={metas} pontosData={pontosData} processo={processo} dark={dark}/>}
+      </>)}
+
+      {/* MODAL METAS */}
+      {showMetas&&(
+        <div style={{position:"fixed",inset:0,background:"#00000099",display:"flex",
+          alignItems:"center",justifyContent:"center",zIndex:200}} onClick={()=>setShowMetas(false)}>
+          <div style={{background:"var(--bg1)",border:"1px solid var(--border)",borderRadius:16,
+            padding:24,minWidth:340,maxWidth:420}} onClick={e=>e.stopPropagation()}>
+            <div style={{fontWeight:700,fontSize:15,color:"var(--text1)",marginBottom:16}}>⚙️ Configurar Metas</div>
+            {KPI_KEYS.map(k=>(
+              <div key={k} style={{marginBottom:12}}>
+                <label style={{fontSize:12,color:"var(--text2)",fontWeight:600,display:"block",marginBottom:3}}>
+                  {KPI_LBL[k]} ({KPI_UNIT[k]})</label>
+                <input type="number" step="0.1" value={tmpMetas[k]}
+                  onChange={e=>setTmpMetas(p=>({...p,[k]:parseFloat(e.target.value)||0}))}
+                  style={{width:"100%",background:"var(--bg0)",border:"1px solid var(--border)",
+                    color:"var(--text0)",borderRadius:8,padding:"7px 12px",fontSize:14}}/>
+              </div>
+            ))}
+            <div style={{display:"flex",gap:8,marginTop:16}}>
+              <button onClick={()=>{setMetas({...tmpMetas});setShowMetas(false);}}
+                style={{flex:1,padding:"9px",borderRadius:8,border:"none",
+                  background:"var(--accent)",color:"#fff",fontWeight:700,cursor:"pointer",fontSize:14}}>Salvar</button>
+              <button onClick={()=>setShowMetas(false)}
+                style={{flex:1,padding:"9px",borderRadius:8,border:"1px solid var(--border)",
+                  background:"transparent",color:"var(--text2)",cursor:"pointer",fontSize:14}}>Cancelar</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(React.createElement(App));
+</script>
+</body>
+</html>

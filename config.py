@@ -9,6 +9,7 @@ CONFIG_FILE = CONFIG_DIR / "config.json"
 
 @dataclass
 class GeoOnlineConfig:
+    # Mantido dormente: código de download existe mas a UI não expõe mais.
     url: str = "http://geonline.enelint.global/#/"
     conta: str = ""
     login: str = ""
@@ -24,10 +25,10 @@ class OperviewConfig:
 
 @dataclass
 class SpotfireConfig:
-    url_scanner: str = ""
-    url_deslocamentos: str = ""
-    username: str = ""
-    password: str = ""
+    # M300 reside na mesma análise (/M300/Scanner 4.0 - RJ); uma só URL.
+    url: str = ""
+    login: str = ""
+    senha: str = ""
 
 
 @dataclass
@@ -49,7 +50,10 @@ class AppConfig:
     spotfire: SpotfireConfig = field(default_factory=SpotfireConfig)
     sharepoint: SharePointConfig = field(default_factory=SharePointConfig)
     n8n: N8nConfig = field(default_factory=N8nConfig)
-    origem_relatorio: str = "geonline"  # "geonline" | "operview"
+    # Fontes selecionáveis no fluxo (checkbox). Apenas Operview está ativa
+    # (M300 removido das configurações do DataHub).
+    fontes: list[str] = field(default_factory=lambda: ["operview"])
+    origem_relatorio: str = "geonline"  # OBSOLETO: migrado p/ `fontes`
     pasta_local: str = ""
     webhook_n8n: str = ""
     base_mensal_enabled: bool = True
@@ -79,8 +83,17 @@ def load_config() -> AppConfig:
         cfg = AppConfig()
         cfg.geonline = _from_dict(GeoOnlineConfig, data.get("geonline", {}))
         cfg.operview = _from_dict(OperviewConfig, data.get("operview", {}))
-        cfg.origem_relatorio = data.get("origem_relatorio", "geonline")
         cfg.spotfire = _from_dict(SpotfireConfig, data.get("spotfire", {}))
+
+        # Migração: campo antigo `origem_relatorio` -> `fontes`
+        if "fontes" in data and isinstance(data["fontes"], list):
+            cfg.fontes = [str(f) for f in data["fontes"] if f == "operview"]
+        elif data.get("origem_relatorio") == "operview":
+            cfg.fontes = ["operview"]
+        elif data.get("origem_relatorio") == "geonline":
+            cfg.fontes = ["operview"]  # geonline está dormente; cai no operview
+        cfg.origem_relatorio = data.get("origem_relatorio", "geonline")
+
         cfg.sharepoint = _from_dict(SharePointConfig, data.get("sharepoint", {}))
         cfg.n8n = _from_dict(N8nConfig, data.get("n8n", {}))
         cfg.pasta_local = data.get("pasta_local", "")

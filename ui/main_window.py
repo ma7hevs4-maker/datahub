@@ -723,40 +723,17 @@ class MainWindow(QMainWindow):
         ov = QVBoxLayout(orig)
         ov.setContentsMargins(0, 0, 0, 0)
         ov.setSpacing(10)
-        ov.addWidget(QLabel("Origem do relatório", objectName="SectionLabel"))
-        self._origem_var = QButtonGroup(self)
-        orig_row = QHBoxLayout()
-        orig_row.setSpacing(18)
-        for txt, val in (("GeoOnline", "geonline"), ("Operview", "operview")):
-            rb = QRadioButton(txt)
-            self._origem_var.addButton(rb, 0 if val == "geonline" else 1)
-            if val == "geonline":
-                rb.setChecked(True)
-            orig_row.addWidget(rb)
-        ov.addLayout(orig_row)
+        ov.addWidget(QLabel("Fontes do relatório", objectName="SectionLabel"))
+        self._fontes_var = {}
+        for txt, val in (("Operview", "operview"),):
+            cb = QCheckBox(txt)
+            cb.setObjectName(f"fonte_{val}")
+            self._fontes_var[val] = cb
+            ov.addWidget(cb)
+        ov.addWidget(QLabel(
+            "Relatório gerado a partir do Operview.",
+            objectName="HintLabel"))
         v.addWidget(self._card(orig))
-
-        geo = QWidget()
-        g = QVBoxLayout(geo)
-        g.setContentsMargins(0, 0, 0, 0)
-        g.setSpacing(10)
-        g.addWidget(QLabel("GeoOnline", objectName="SectionLabel"))
-        for label, key, secret in (
-            ("URL", "geo_url", False),
-            ("Conta", "geo_conta", False),
-            ("Login", "geo_login", False),
-            ("Senha", "geo_senha", True),
-        ):
-            row = QHBoxLayout()
-            row.setSpacing(10)
-            row.addWidget(QLabel(label))
-            var = QLineEdit()
-            if secret:
-                var.setEchoMode(QLineEdit.EchoMode.Password)
-            self._vars_cfg[key] = var
-            row.addWidget(var, stretch=1)
-            g.addLayout(row)
-        v.addWidget(self._card(geo))
 
         opv = QWidget()
         op = QVBoxLayout(opv)
@@ -777,13 +754,6 @@ class MainWindow(QMainWindow):
             self._vars_cfg[key] = var
             row.addWidget(var, stretch=1)
             op.addLayout(row)
-        btn_gravar = QPushButton("🎯  Gravar login (clique na conta e na senha)")
-        btn_gravar.setToolTip(
-            "Abre o Operview e grava onde voce clica (conta + campo de senha). "
-            "Salva login_posicoes.txt e o HTML da tela na Area de Trabalho para o "
-            "desenvolvedor ajustar o login automatico.")
-        btn_gravar.clicked.connect(self._gravar_login)
-        op.addWidget(btn_gravar)
         v.addWidget(self._card(opv))
 
         apar = QWidget()
@@ -878,15 +848,6 @@ class MainWindow(QMainWindow):
         self._carregar_config()
         return page
 
-    def _gravar_login(self):
-        """Abre o gravador de login do Operview em processo separado
-        (DataHub.exe --gravar-login) para nao conflitar com o loop do PyQt."""
-        import subprocess, sys
-        try:
-            subprocess.Popen([sys.executable, "--gravar-login"])
-        except Exception as e:  # noqa: BLE001
-            print(f"❌ Nao foi possivel abrir o gravador de login: {e}")
-
     def _aplicar_tema(self, claro: bool = False):
         self._claro = bool(claro)
         self._tema = _light_theme() if self._claro else _dark_theme()
@@ -907,12 +868,16 @@ class MainWindow(QMainWindow):
         self._btn_parar.setEnabled(True)
         modo = {0: "uma_vez", 1: "30min", 2: "60min"}[self._modo.checkedId()]
         self._on_executar(
-            selecionados={"geonline": True},
+            selecionados=self._fontes_selecionadas(),
             data_ini=data_ini,
             data_fim=data_fim,
             modo=modo,
             polo=self._polo_exec.currentText(),
         )
+
+    def _fontes_selecionadas(self) -> list[str]:
+        """Retorna as fontes marcadas nos checkboxes (apenas operview)."""
+        return [v for v, cb in self._fontes_var.items() if cb.isChecked()]
 
     def _parar(self):
         self._on_parar()
@@ -1037,16 +1002,11 @@ class MainWindow(QMainWindow):
 
     def _carregar_config(self):
         cfg = self._cfg
-        self._vars_cfg["geo_url"].setText(cfg.geonline.url)
-        self._vars_cfg["geo_conta"].setText(cfg.geonline.conta)
-        self._vars_cfg["geo_login"].setText(cfg.geonline.login)
-        self._vars_cfg["geo_senha"].setText(cfg.geonline.senha)
         self._vars_cfg["opv_url"].setText(cfg.operview.url)
         self._vars_cfg["opv_login"].setText(cfg.operview.login)
         self._vars_cfg["opv_senha"].setText(cfg.operview.senha)
-        for rb in self._origem_var.buttons():
-            if self._origem_var.id(rb) == (1 if cfg.origem_relatorio == "operview" else 0):
-                rb.setChecked(True)
+        for val, cb in self._fontes_var.items():
+            cb.setChecked(val in cfg.fontes)
         self._vars_cfg["pasta_local"].setText(cfg.pasta_local)
         self._vars_cfg["sp_enabled"].setChecked(cfg.sharepoint.enabled)
         self._vars_cfg["sp_pasta"].setText(cfg.sharepoint.pasta)
@@ -1059,17 +1019,11 @@ class MainWindow(QMainWindow):
 
     def _salvar_config(self):
         cfg = self._cfg
-        cfg.geonline.url = self._vars_cfg["geo_url"].text().strip()
-        cfg.geonline.conta = self._vars_cfg["geo_conta"].text().strip()
-        cfg.geonline.login = self._vars_cfg["geo_login"].text().strip()
-        cfg.geonline.senha = self._vars_cfg["geo_senha"].text().strip()
         cfg.operview.url = self._vars_cfg["opv_url"].text().strip()
         cfg.operview.login = self._vars_cfg["opv_login"].text().strip()
         cfg.operview.senha = self._vars_cfg["opv_senha"].text().strip()
-        cfg.origem_relatorio = (
-            "operview" if self._origem_var.id(self._origem_var.checkedButton()) == 1
-            else "geonline"
-        )
+        cfg.fontes = self._fontes_selecionadas()
+        cfg.origem_relatorio = "operview" if "operview" in cfg.fontes else "geonline"
         cfg.pasta_local = self._vars_cfg["pasta_local"].text().strip()
         cfg.sharepoint.enabled = self._vars_cfg["sp_enabled"].isChecked()
         cfg.sharepoint.pasta = self._vars_cfg["sp_pasta"].text().strip()
