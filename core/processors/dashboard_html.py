@@ -254,6 +254,29 @@ def gerar_dashboard_html(df, saida=None, log_fn=print):
             except (TypeError, ValueError):
                 return d
 
+        def to_intstr(v):
+            """Dia/mes como texto SEM '.0'.
+
+            'Dia'/'Mês' chegam como int64 e 'Dia Saída'/'Mês Saída' como float64,entao
+            _norm() produzia '15' e '15.0'. Como a comparacao de datas no dashboard e
+            textual, os dias de saida nunca batiam com os de entrada. Aqui os dois
+            lados ficam no mesmo formato; vazio/NaN continuam vazios.
+            """
+            if v is None:
+                return ""
+            try:
+                if pd.isna(v):
+                    return ""
+            except (TypeError, ValueError):
+                pass
+            s = str(v).strip()
+            if s == "" or s.lower() in ("nan", "none", "nat"):
+                return ""
+            try:
+                return str(int(float(s)))
+            except (TypeError, ValueError):
+                return s
+
         def to_num(v, d=0.0):
             if v is None:
                 return d
@@ -324,11 +347,11 @@ def gerar_dashboard_html(df, saida=None, log_fn=print):
             "pr": proc,
             "gp": grupo,
             "gpd": grupo_d,
-            "d": dia,
-            "mes": mes,
-            "d_sd": _norm(val(c_dia_sd)),
-            "mes_sd": _norm(val(c_mes_sd)),
-            "diaMes": dia,
+            "d": to_intstr(dia),
+            "mes": to_intstr(mes),
+            "d_sd": to_intstr(val(c_dia_sd)),
+            "mes_sd": to_intstr(val(c_mes_sd)),
+            "diaMes": to_intstr(dia),
             "eq": equipe,
             "eqd": equi_d,
             "eo": equi_op,

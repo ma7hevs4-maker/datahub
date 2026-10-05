@@ -824,6 +824,8 @@ function passes(r,F){
   if(F.gpd&&!F.gpd.all&&!F.gpd.sel.has(r.gpd)) return false;
   if(F.mes&&!F.mes.all&&!F.mes.sel.has(String(r.mes))) return false;
   if(F.diaMes&&!F.diaMes.all&&!F.diaMes.sel.has(String(r.diaMes))) return false;
+  if(F.mesSd&&!F.mesSd.all&&!F.mesSd.sel.has(String(r.mes_sd))) return false;
+  if(F.diaMesSd&&!F.diaMesSd.all&&!F.diaMesSd.sel.has(String(r.d_sd))) return false;
   if(F.ut){
     if(!F.ut.all){
       const a=F.ut.sel.has('UTS')&&UTS.includes(r.p);
@@ -1006,6 +1008,9 @@ function segBase(sub){
   const U=UF[tab]||{};
   const F=FSTATE[sub]||{};
   const C={ut:U.ut,p:U.p,suc:U.suc,nt:U.nt,gpd:U.gpd,e:F.e,sd:F.sd,ta:mergeF(U.ta,F.ta),ts:mergeF(U.ts,F.ts),mes:U.mes,diaMes:U.diaMes};
+  // S3 e o segmento de SAIDA por dia: os filtros globais de Mes/Dia contam por
+  // data de saida, para nao prender o grafico a data de entrada do incidente.
+  if(sub==='s3'){C.mesSd=U.mes;C.diaMesSd=U.diaMes;C.mes=null;C.diaMes=null;}
   return RAW.filter(r=>passes(r,C));
 }
 function plOf(base){ return polos().filter(p=>base.some(r=>r.p===p)); }
@@ -1645,9 +1650,13 @@ function buildS1(base){
 // ---- Dashboard 3 - Saída (visão de período) ----
 function buildS3(base){
   const fe=base.filter(r=>r.s==='Fechado');
-  const dk=r=>((r.mes!==undefined&&r.mes!==null)?String(r.mes):'?')+'-'+((r.d!==undefined&&r.d!==null)?String(r.d):'?');
+  // Segmento de SAÍDA: agrupa pela data de SAÍDA (mes_sd/d_sd), independente da
+  // data de ENTRADA. Antes usava r.mes/r.d (entrada), entao o grafico mostrava
+  // quantos entraram no dia e nao quantos foram encerrados nele.
+  const nz=v=>((v!==undefined&&v!==null&&String(v).trim()!=='')?String(v).trim():'?');
+  const dk=r=>nz(r.mes_sd)+'-'+nz(r.d_sd);
   const dm={};
-  fe.forEach(r=>{const k=dk(r); if(!dm[k]) dm[k]={mes:r.mes,d:r.d};});
+  fe.forEach(r=>{const k=dk(r); if(!dm[k]) dm[k]={mes:r.mes_sd,d:r.d_sd};});
   const keys=Object.keys(dm).sort((a,b)=>{const A=dm[a],B=dm[b];return (Number(A.mes)-Number(B.mes))||(Number(A.d)-Number(B.d));});
   const labels=keys.map(k=>String(dm[k].d)+'/'+String(dm[k].mes));
   if(!labels.length) labels.push('—');
