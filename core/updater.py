@@ -74,8 +74,12 @@ def _make_ssl_ctx():
 def _version_file_candidates():
     exe_dir = Path(sys.executable).parent
     # onedir (PyInstaller 6.x) coloca os datas em _internal/, enquanto o
-    # _MEIPASS so existe no onefile. Checa ambos para o auto-update funcionar.
-    candidates = [exe_dir / "version.txt", exe_dir / "_internal" / "version.txt"]
+    # _MEIPASS so existe no onefile.
+    # ORDEM IMPORTA: _internal/version.txt e o arquivo que o build empacota e que o
+    # robocopy do auto-update substitui. Um version.txt antigo na raiz da instalacao
+    # (do setup) sombreava o novo e travava o app no 1.2.13 para sempre, num loop de
+    # auto-update. Por isso _internal vem PRIMEIRO, igual a ordem do update.bat.
+    candidates = [exe_dir / "_internal" / "version.txt", exe_dir / "version.txt"]
     meipass = getattr(sys, "_MEIPASS", None)
     if meipass:
         candidates.append(Path(meipass) / "version.txt")
@@ -273,13 +277,17 @@ def prepare_update(download_url, progress=None, expected_version=None):
         "set MORTO=0\n"
         "for /L %%a in (1,1,30) do (\n"
         '  taskkill /F /IM DataHub.exe /T >> "!LOG!" 2>&1\n'
+        '  taskkill /F /IM chromedriver.exe >> "!LOG!" 2>&1\n'
+        '  taskkill /F /IM chrome.exe >> "!LOG!" 2>&1\n'
         "  timeout /t 1 /nobreak >nul\n"
         '  tasklist /FI "IMAGENAME eq DataHub.exe" 2>nul | find /I "DataHub.exe" >nul\n'
         "  if errorlevel 1 ( set MORTO=1 & goto appmorto )\n"
         ")\n"
         ":appmorto\n"
         'echo [%DATE% %TIME%] app morto=!MORTO! >> "!LOG!"\n'
-        "timeout /t 2 /nobreak >nul\n"
+        'taskkill /F /IM chromedriver.exe >> "!LOG!" 2>&1\n'
+        'taskkill /F /IM chrome.exe >> "!LOG!" 2>&1\n'
+        "timeout /t 4 /nobreak >nul\n"
         "set OK=0\n"
         "for /L %%i in (1,1,6) do (\n"
         '  echo [%DATE% %TIME%] robocopy tentativa %%i >> "!LOG!"\n'
@@ -295,6 +303,7 @@ def prepare_update(download_url, progress=None, expected_version=None):
         '  echo [%DATE% %TIME%] tentativa %%i: versao="!GOT!" esperado="{EXP}" >> "!LOG!"\n'
         '  if "!GOT!"=="{EXP}" (\n'
         '    echo [%DATE% %TIME%] VERSAO CONFERE >> "!LOG!"\n'
+        '    > "{INSTALL}\\version.txt" echo {EXP}\n'
         '    if exist "!FLAG!" del "!FLAG!"\n'
         "    set OK=1\n"
         "    goto done\n"
@@ -316,6 +325,7 @@ def prepare_update(download_url, progress=None, expected_version=None):
         '  echo [%DATE% %TIME%] apos mover: versao="!GOT2!" >> "!LOG!"\n'
         '  if "!GOT2!"=="{EXP}" (\n'
         '    echo [%DATE% %TIME%] VERSAO CONFERE (apos mover) >> "!LOG!"\n'
+        '    > "{INSTALL}\\version.txt" echo {EXP}\n'
         '    if exist "!FLAG!" del "!FLAG!"\n'
         "    set OK=1\n"
         "    goto done\n"
