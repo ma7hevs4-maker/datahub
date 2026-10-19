@@ -19,6 +19,10 @@ from core.processors.dashboard_html import gerar_dashboard_html
 from core.base_mensal import atualizar_base_mensal
 from integrations.sharepoint import sincronizar
 from integrations.n8n import enviar
+try:
+    from db_sync import gravar_incidencias  # banco PostgreSQL (opcional)
+except Exception:
+    gravar_incidencias = None
 from ui.main_window import MainWindow
 from PyQt6.QtWidgets import QApplication
 
@@ -270,6 +274,12 @@ class App:
             atualizar_base_mensal(df, "incidencias", pasta, "Data Início", self._log)
         else:
             self._log("  ⏭️  Base mensal desativada.")
+
+        if gravar_incidencias is not None:
+            try:
+                gravar_incidencias(df_full, log_fn=self._log)
+            except Exception as e:
+                self._log(f"❌ Banco falhou (o fluxo continua): {e}")
 
         try:
             self._log("  📊 Gerando dashboard HTML...")

@@ -59,6 +59,8 @@ python -m PyInstaller --noconfirm ^
     --hidden-import=selenium.webdriver.remote.webelement ^
     --hidden-import=selenium.common.exceptions ^
     --hidden-import=core.updater ^
+    --hidden-import=db_sync ^
+    --hidden-import=psycopg2 ^
     app.py
 
 echo.
