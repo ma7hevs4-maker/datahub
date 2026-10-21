@@ -99,6 +99,24 @@ COLUNAS = [
     ('Mês', 'mes', 'SMALLINT'),
     ('Dia', 'dia', 'SMALLINT'),
     ('Observação', 'observacao', 'TEXT'),
+    ('Cumpre Regras Ouro', 'cumpre_regras_ouro', 'TEXT'),
+    ('ORD 2', 'ord_2', 'TEXT'),
+    ('Estado', 'estado', 'TEXT'),
+    ('Entrada', 'entrada', 'TEXT'),
+    ('Saída', 'saida', 'TEXT'),
+    ('MR', 'mr', 'TEXT'),
+    ('Início MR', 'inicio_mr', 'TIMESTAMP'),
+    ('Nível Compensação', 'nivel_compensacao', 'TEXT'),
+    ('Compensação', 'compensacao', 'TEXT'),
+    ('Status URA', 'status_ura', 'TEXT'),
+    ('Resultado URA', 'resultado_ura', 'TEXT'),
+    ('Resultado BOT', 'resultado_bot', 'TEXT'),
+    ('Motivo BOT', 'motivo_bot', 'TEXT'),
+    ('Ponto Atenção', 'ponto_atencao', 'TEXT'),
+    ('Tipo Agrupamento', 'tipo_agrupamento', 'TEXT'),
+    ('Área Risco', 'area_risco', 'TEXT'),
+    ('Latitude', 'latitude', 'DOUBLE PRECISION'),
+    ('Longitude', 'longitude', 'DOUBLE PRECISION'),
 ]
 
 
@@ -159,6 +177,9 @@ def preparar(df: pd.DataFrame, segredo: bytes):
             s = s.astype("object").where(s.notna(), None)
             s = s.map(lambda v: None if v is None else str(v))
         out[nome] = s
+    # Operview usa -222077236 / 9090669639 como "sem coordenada": vira NULL.
+    out.loc[out["latitude"].abs() > 90, "latitude"] = None
+    out.loc[out["longitude"].abs() > 180, "longitude"] = None
     # Arquivos antigos não têm Mês/Dia Saída: deriva da Data Fim.
     for nome, atr in (("mes_saida", "month"), ("dia_saida", "day")):
         vazio = out[nome].isna()
@@ -202,7 +223,9 @@ def gravar_incidencias(df: pd.DataFrame, dsn: str = None, log_fn=print, lote: in
     conn = psycopg2.connect(dsn)
     try:
         with conn, conn.cursor() as cur:           # uma transação: ou grava tudo ou nada
-            cur.execute("ALTER TABLE incidencias ADD COLUMN IF NOT EXISTS observacao TEXT")  # migração automática
+            for _o, _n, _t in COLUNAS:                  # migração automática: cria colunas novas
+                if "PRIMARY KEY" not in _t:
+                    cur.execute(f"ALTER TABLE incidencias ADD COLUMN IF NOT EXISTS {_n} {_t}")
             pronto, descartadas = preparar(df, _segredo(cur))
             nomes = list(pronto.columns)
             sets = ", ".join(f"{n}=EXCLUDED.{n}" for n in nomes if n != "numero")
