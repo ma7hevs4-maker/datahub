@@ -155,12 +155,24 @@ def _datas(s: pd.Series) -> pd.Series:
     return r
 
 
+ESTADOS_FORA = {"programado", "programada", "anulado", "anulada"}
+CAUSAS_FORA = {"atend cancelado cr", "atendimento cancelado", "programada manutenção", "programada obras"}
+
+
 def preparar(df: pd.DataFrame, segredo: bytes):
     """Filtra os 9 polos e converte tipos. Retorna (df_pronto, descartadas)."""
     total = len(df)
     polo_norm = df["Polo"].map(_norm)
     df = df[polo_norm.isin(POLOS)].copy()
     descartadas = total - len(df)
+
+    # Fora do banco (mesma regra do dashboard HTML): Estado programado/anulado e causas canceladas/programadas.
+    est = df["Estado"].astype(str).str.strip().str.lower() if "Estado" in df.columns else pd.Series("", index=df.index)
+    cau = df["Causa"].astype(str).str.strip().str.lower() if "Causa" in df.columns else pd.Series("", index=df.index)
+    excluir = est.isin(ESTADOS_FORA) | cau.isin(CAUSAS_FORA)
+    excluidos = df.loc[excluir, "Número"].dropna().astype(str).str.strip().tolist() if "Número" in df.columns else []
+    descartadas += int(excluir.sum())
+    df = df[~excluir].copy()
 
     out = pd.DataFrame(index=df.index)
     for orig, nome, tipo in COLUNAS:
@@ -189,6 +201,7 @@ def preparar(df: pd.DataFrame, segredo: bytes):
     out["cliente_hash"] = df[col_cli].map(lambda v: _hash_cliente(v, segredo)) if col_cli else None
     out["polo_regional"] = df["Polo"].astype(str).str.strip()
     out = out[out["numero"].notna()].drop_duplicates(subset="numero", keep="last")
+    out.attrs["excluidos"] = excluidos
     return out, descartadas
 
 
@@ -227,6 +240,11 @@ def gravar_incidencias(df: pd.DataFrame, dsn: str = None, log_fn=print, lote: in
                 if "PRIMARY KEY" not in _t:
                     cur.execute(f"ALTER TABLE incidencias ADD COLUMN IF NOT EXISTS {_n} {_t}")
             pronto, descartadas = preparar(df, _segredo(cur))
+            excl = pronto.attrs.get("excluidos") or []
+            apagadas = 0
+            if excl:                                    # incidente que virou programado/anulado/cancelado sai do banco
+                cur.execute("DELETE FROM incidencias WHERE numero = ANY(%s)", (excl,))
+                apagadas = cur.rowcount
             nomes = list(pronto.columns)
             sets = ", ".join(f"{n}=EXCLUDED.{n}" for n in nomes if n != "numero")
             sql = (f"INSERT INTO incidencias ({', '.join(nomes)}, carregado_em) VALUES %s "
@@ -244,8 +262,9 @@ def gravar_incidencias(df: pd.DataFrame, dsn: str = None, log_fn=print, lote: in
             cur.execute(
                 "INSERT INTO cargas (linhas_recebidas, linhas_gravadas, linhas_descartadas) VALUES (%s,%s,%s)",
                 (recebidas, len(registros), descartadas))
-        log_fn(f"  🗄️  Banco: {len(registros)} linhas gravadas ({descartadas} fora dos 9 polos descartadas); "
-               f"reincidência recalculada em {len(meses)} mês(es), {alterados} linha(s) ajustada(s)")
+        log_fn(f"  🗄️  Banco: {len(registros)} linhas gravadas ({descartadas} descartadas: fora dos 9 polos, Estado ou Causa); "
+               f"reincidência recalculada em {len(meses)} mês(es), {alterados} linha(s) ajustada(s)"
+               + (f"; {apagadas} removida(s) por Estado/Causa" if apagadas else ""))
         return len(registros)
     except Exception as e:
         try:
