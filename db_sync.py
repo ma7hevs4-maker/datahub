@@ -98,6 +98,7 @@ COLUNAS = [
     ('Ano', 'ano', 'SMALLINT'),
     ('Mês', 'mes', 'SMALLINT'),
     ('Dia', 'dia', 'SMALLINT'),
+    ('Observação', 'observacao', 'TEXT'),
 ]
 
 
@@ -125,6 +126,17 @@ def _segredo(cur) -> bytes:
     return cur.fetchone()[0].encode()
 
 
+def _datas(s: pd.Series) -> pd.Series:
+    """dd/mm/aaaa hh:mm:ss (formato do Operview). Rápido com formato fixo; o que não casar tenta o modo flexível."""
+    if pd.api.types.is_datetime64_any_dtype(s):
+        return s
+    r = pd.to_datetime(s, format="%d/%m/%Y %H:%M:%S", errors="coerce")
+    falhou = r.isna() & s.notna()
+    if falhou.any():
+        r[falhou] = pd.to_datetime(s[falhou], dayfirst=True, errors="coerce")
+    return r
+
+
 def preparar(df: pd.DataFrame, segredo: bytes):
     """Filtra os 9 polos e converte tipos. Retorna (df_pronto, descartadas)."""
     total = len(df)
@@ -138,7 +150,7 @@ def preparar(df: pd.DataFrame, segredo: bytes):
         if s.dtype == object or str(s.dtype).startswith("str"):
             s = s.where(~s.astype(str).str.strip().isin(["---", "-", "nan", "NaT", "None", ""]), None)
         if tipo.startswith("TIMESTAMP"):
-            s = pd.to_datetime(s, dayfirst=True, errors="coerce")
+            s = _datas(s)
         elif tipo in ("INTEGER", "SMALLINT"):
             s = pd.to_numeric(s, errors="coerce").astype("Int64")
         elif tipo.startswith("DOUBLE"):
@@ -147,6 +159,11 @@ def preparar(df: pd.DataFrame, segredo: bytes):
             s = s.astype("object").where(s.notna(), None)
             s = s.map(lambda v: None if v is None else str(v))
         out[nome] = s
+    # Arquivos antigos não têm Mês/Dia Saída: deriva da Data Fim.
+    for nome, atr in (("mes_saida", "month"), ("dia_saida", "day")):
+        vazio = out[nome].isna()
+        if vazio.any():
+            out.loc[vazio, nome] = getattr(out.loc[vazio, "data_fim"].dt, atr).astype("Int64")
     col_cli = next((c for c in ["Nº Cliente", "UC", "Cliente", "N_Cliente"] if c in df.columns), None)
     out["cliente_hash"] = df[col_cli].map(lambda v: _hash_cliente(v, segredo)) if col_cli else None
     out["polo_regional"] = df["Polo"].astype(str).str.strip()
@@ -172,7 +189,7 @@ def obter_dsn():
     if appdata:
         arq = Path(appdata) / "DataHub" / "database_url.txt"
         if arq.exists():
-            return arq.read_text(encoding="utf-8").strip()
+            return arq.read_text(encoding="utf-8-sig").strip()
     return ""
 
 
@@ -185,6 +202,7 @@ def gravar_incidencias(df: pd.DataFrame, dsn: str = None, log_fn=print, lote: in
     conn = psycopg2.connect(dsn)
     try:
         with conn, conn.cursor() as cur:           # uma transação: ou grava tudo ou nada
+            cur.execute("ALTER TABLE incidencias ADD COLUMN IF NOT EXISTS observacao TEXT")  # migração automática
             pronto, descartadas = preparar(df, _segredo(cur))
             nomes = list(pronto.columns)
             sets = ", ".join(f"{n}=EXCLUDED.{n}" for n in nomes if n != "numero")

@@ -35,6 +35,16 @@ try:
     from db_sync import gravar_incidencias  # banco PostgreSQL (opcional)
 except Exception:
     gravar_incidencias = None
+try:
+    from db_m300 import (  # banco PostgreSQL — tabelas do M300 (opcional)
+        gravar_deslocamentos_hoje,
+        gravar_deslocamentos_total,
+        gravar_tabela_completa,
+        ler_csv_hoje,
+    )
+except Exception:
+    gravar_deslocamentos_hoje = gravar_deslocamentos_total = None
+    gravar_tabela_completa = ler_csv_hoje = None
 from ui.main_window import MainWindow
 from PyQt6.QtWidgets import QApplication
 
@@ -488,6 +498,7 @@ class App:
         try:
             p = baixar_deslocamentos_hoje(cfg.spotfire, pasta, self._log, token)
             self._log(f"  ✅ Hoje: {p.name} ({p.stat().st_size} bytes)")
+            self._gravar_m300_banco("hoje", p)
         except Exception as e:
             self._log(f"  ❌ M300 hoje falhou: {e}")
 
@@ -511,8 +522,30 @@ class App:
             )
             if base_ate_novo:
                 self._log(f"  🗓️  Última data na base: {base_ate_novo}")
+            for p in arquivos:
+                self._gravar_m300_banco(p.parent.name, p)
         except Exception as e:
             self._log(f"  ❌ M300 bases mensais falharam: {e}")
+
+    def _gravar_m300_banco(self, tipo: str, caminho: Path):
+        """Grava um arquivo do M300 no PostgreSQL. Nunca derruba o fluxo."""
+        if not self._cfg.db_enabled:
+            return
+        if gravar_deslocamentos_hoje is None:
+            self._log("  ⚠️  Banco habilitado, mas módulo db_m300 não está disponível.")
+            return
+        try:
+            if tipo == "hoje":
+                gravar_deslocamentos_hoje(ler_csv_hoje(str(caminho)), log_fn=self._log)
+            else:
+                import pandas as _pd
+                df = _pd.read_excel(str(caminho))
+                if tipo == "deslocamentos":
+                    gravar_deslocamentos_total(df, log_fn=self._log)
+                elif tipo == "tabela_completa":
+                    gravar_tabela_completa(df, log_fn=self._log)
+        except Exception as e:
+            self._log(f"❌ Banco (M300 {tipo}) falhou (o fluxo continua): {e}")
 
     # ── Tratamento avulso ─────────────────────────────────────────────────────
 
@@ -569,4 +602,5 @@ if __name__ == "__main__":
         gravar_login_operview(cfg=_cfg.operview, log_fn=print)
         sys.exit(0)
     App().run()
-
+
+

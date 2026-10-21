@@ -1169,27 +1169,30 @@ class MainWindow(QMainWindow):
         launch_updater(bat)
 
     def _on_update_check(self, res):
+        """Avisa que há versão nova, mas não baixa nem instala sozinho.
+
+        A atualização só acontece quando o usuário clica em
+        Configurações > Verificar atualização e confirma.
+        """
         if res is None or not isinstance(res, dict) or res.get("status") == "error":
             return
         if res.get("status") == "uptodate":
             return
         tag, url = res["tag"], res["url"]
+        # Evita repetir a mesma notificação a cada 30 min.
+        if getattr(self, "_update_notified_tag", None) == tag:
+            return
+        self._update_notified_tag = tag
+        self._update_available = (tag, url)
         try:
             self._tray.showMessage(
                 "DataHub",
-                f"Nova versão {tag} disponível — atualizando...",
+                f"Nova versão {tag} disponível — abra Configurações para atualizar quando quiser.",
                 QSystemTrayIcon.MessageIcon.Information, 6000)
         except Exception:
             pass
-        # Não interrompe um job de 60 min em andamento; aplica quando ocioso.
-        if self._rodando:
-            self._update_status.setText(
-                f"Nova versão {tag} disponível (vai atualizar ao fim do job atual).")
-            return
-        self._update_status.setText(f"Atualizando para {tag}...")
-        threading.Thread(
-            target=self._baixar_e_aplicar, args=(url, tag), daemon=True
-        ).start()
+        self._update_status.setText(
+            f"Nova versão {tag} disponível. Clique em 'Verificar atualização' para instalar.")
 
     def _checar_falha_update(self):
         """Avisa se um update.bat anterior falhou (versao nao bateu apos copiar).

@@ -61,6 +61,7 @@ python -m PyInstaller --noconfirm ^
     --hidden-import=selenium.common.exceptions ^
     --hidden-import=core.updater ^
     --hidden-import=db_sync ^
+    --hidden-import=db_m300 ^
     --hidden-import=psycopg2 ^
     app.py
 
