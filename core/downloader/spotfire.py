@@ -896,8 +896,8 @@ def _substituir_com_retry(origem: Path, destino: Path, log_fn=print,
         except (PermissionError, OSError) as e:
             if i == tentativas - 1:
                 raise RuntimeError(
-                    f"Não foi possível substituir '{destino.name}' "
-                    f"(arquivo aberto em outro programa?): {e}"
+                    f"Não foi possível substituir '{destino.name}'. "
+                    f"Feche o arquivo no Excel/OneDrive e tente novamente: {e}"
                 )
             if i == 0 or (i + 1) % 10 == 0:
                 log_fn(
@@ -2759,12 +2759,23 @@ def _norm_coluna(nome) -> str:
     )
 
 
+def _gps_label(valor) -> str:
+    """Converte o ícone de GPS do Painel para Sim/Não."""
+    v = str(valor or "").strip().lower()
+    if v == "cross,ffffab9e":
+        return "Não"
+    if v == "circle,ff37db7e":
+        return "Sim"
+    return ""
+
+
 def _merge_painel_desloc(painel_path: Path, desloc_path: Path,
                          destino: Path, log_fn=print) -> Path:
     """Acrescenta ao deslocamento de hoje as colunas do Painel Acompanhamento.
 
     Merge por 'Equipe' (o Painel tem 1 linha por equipe). Colunas adicionadas:
-    Inicio Calendário, Login, Fim calendário, Log Off.
+    Inicio Calendário, Login, Fim calendário, Log Off, GPS (Cross=Não /
+    Circle=Sim) e Ext Calendário.
     """
     painel = pd.read_csv(str(painel_path), sep="\t", encoding="utf-16", dtype=str)
     desloc = pd.read_csv(str(desloc_path), sep="\t", encoding="utf-16", dtype=str)
@@ -2774,6 +2785,8 @@ def _merge_painel_desloc(painel_path: Path, desloc_path: Path,
         "login": "Login",
         "fimcalendario": "Fim calendário",
         "logoff": "Log Off",
+        "gps": "GPS",
+        "extcalendario": "Ext Calendário",
     }
     pcols = {_norm_coluna(c): c for c in painel.columns}
     dcols = {_norm_coluna(c): c for c in desloc.columns}
@@ -2795,6 +2808,19 @@ def _merge_painel_desloc(painel_path: Path, desloc_path: Path,
             painel_sel[nome_final] = (
                 painel[origem].fillna("").astype(str).str.strip()
             )
+
+    # GPS: o Painel traz o ícone; converter para Sim/Não.
+    gps_src = pcols.get("gps")
+    if gps_src:
+        gps_vals = painel[gps_src].fillna("").astype(str).str.strip()
+        painel_sel["GPS"] = gps_vals.map(_gps_label)
+        nao_mapeados = sorted({
+            v for v in gps_vals
+            if v and v.strip().lower() not in ("(empty)", "none", "nan")
+            and _gps_label(v) == ""
+        })
+        if nao_mapeados:
+            log_fn(f"  ⚠️  GPS sem mapeamento (ficaram vazios): {nao_mapeados[:10]}")
 
     duplicadas = int(painel_sel["_equipe_key"].duplicated().sum())
     if duplicadas:
@@ -3084,8 +3110,9 @@ def baixar_deslocamentos_hoje(
         merged_temp = temp_download / "_m300_hoje_merged.csv"
         _merge_painel_desloc(painel_temp, desloc_temp, merged_temp, log_fn)
 
-        destino = pasta / NOME_M300_HOJE
-        _substituir_com_retry(merged_temp, destino, log_fn)
+        final = pasta / NOME_M300_HOJE
+        _substituir_com_retry(merged_temp, final, log_fn)
+        destino = final
         log_fn(f"  ✅ Salvo: {destino.name} ({destino.stat().st_size} bytes)")
         return destino
     finally:

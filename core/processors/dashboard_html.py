@@ -58,6 +58,9 @@ def _norm(v):
     return str(v).strip()
 
 
+SEM_EQUIPE = {"---", "-", "", "SEM EQUIPE", "GENERICA"}
+
+
 def _carregar_template():
     """Template do dashboard. Prioriza o arquivo externo (versao validada);
     cai no _TEMPLATE embutido se o arquivo nao existir."""
@@ -303,6 +306,10 @@ def gerar_dashboard_html(df, saida=None, log_fn=print):
         mes = _norm(val(c_mes))
         equipe = _norm(val(c_equipe))
         equi_d = _norm(val(c_equi_d))
+        if equipe.strip().upper() in SEM_EQUIPE:
+            equipe = ""
+        if equi_d.strip().upper() in SEM_EQUIPE:
+            equi_d = ""
         equi_op = _norm(val(c_equi_op)).lower()
         regras = _norm(val(c_regras)).upper()
         if regras in ("S", "SIM", "Y", "YES", "1"):

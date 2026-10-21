@@ -468,7 +468,7 @@ table.dt tr.team-row td:nth-child(1){font-weight:600}
     <h4>1.1 Filtros universais (valem para toda a aba)</h4>
     <p>Definidos em <code>TOP_CONF</code>. Aplicam-se a todos os segmentos da aba:</p>
     <ul>
-      <li><b>UT</b> — Unidade (UTS / UTN).</li>
+      <li><b>UT</b> - Unidade: <b>UTS</b> = Magé, Niterói, São Gonçalo, Serrana e Sul; <b>UTN</b> = Campos, Lagos, Macaé e Noroeste.</li>
       <li><b>Polo</b> — polo do incidente (<code>p</code>).</li>
       <li><b>Sucursal</b> — sucursal (<code>suc</code>).</li>
       <li><b>NT</b> — nível de tensão (BT, MT, AT, OSM, Outro).</li>
@@ -2018,7 +2018,7 @@ function fillKpis(id,items){
   el.innerHTML=items.map(b=>`<div class="kpi ${b.cls}"><div class="v">${b.v}</div><div class="l">${b.l}</div></div>`).join('');
 }
 const fmtN=n=>Number(n||0).toLocaleString('pt-BR');
-function dCount(rows,key){const s=new Set(rows.map(r=>r[key]).filter(v=>v&&v!==''&&v!=='---'));return s.size;}
+function dCount(rows,key){const s=new Set(rows.map(r=>r[key]).filter(v=>{const x=String(v||'').trim();return x!==''&&!SEM_EQUIPE.includes(x.toUpperCase());}));return s.size;}
 function setVCard(id,v){
   if(tab==='d3') id='d3-'+id;
   const el=document.getElementById(id);
@@ -2431,8 +2431,8 @@ function buildKPIs(){
   const fe=base.filter(r=>r.s==='Fechado');
   const hoje=base.filter(r=>r.e==='Hoje');
   const feHoje=fe.filter(r=>r.sd==='Hoje');
-  const hasEq=r=>{const v=String(r.eq||'').trim();return v!==''&&v!=='---';};
-  const hasEqd=r=>{const v=String(r.eqd||'').trim();return v!==''&&v!=='---';};
+  const hasEq=r=>{const v=String(r.eq||'').trim();return v!==''&&!SEM_EQUIPE.includes(v.toUpperCase());};
+  const hasEqd=r=>{const v=String(r.eqd||'').trim();return v!==''&&!SEM_EQUIPE.includes(v.toUpperCase());};
   kpiRows={
     abH:ab.filter(r=>r.e==='Hoje'),
     abO:ab.filter(r=>r.e==='Ontem'),
@@ -2508,7 +2508,7 @@ function buildKPIsD3(){
   const fe=base.filter(r=>r.s==='Fechado');
   const ab=base;
   const tmaRows=fe.filter(r=>r.cg==='Considerar');
-  const hasEqd=r=>{const v=String(r.eqd||'').trim();return v!==''&&v!=='---';};
+  const hasEqd=r=>{const v=String(r.eqd||'').trim();return v!==''&&!SEM_EQUIPE.includes(v.toUpperCase());};
   const dayKey=r=>((r.mes!==undefined&&r.mes!==null)?String(r.mes):'?')+'-'+((r.d!==undefined&&r.d!==null)?String(r.d):'?');
   const daysA={}; ab.forEach(r=>{daysA[dayKey(r)]=1;});
   const daysB={}; fe.forEach(r=>{daysB[dayKey(r)]=1;});
@@ -2826,10 +2826,10 @@ function drillIncRows(){
 function renderDrillTeams(body){
   const seen=new Map();
   drillRows.forEach(r=>{
-    const v=r[drillField];
-    if(!v||v===''||v==='---') return;
-    if(!seen.has(v)) seen.set(v,[]);
-    seen.get(v).push(String(r.n||''));
+    const vv=String(r[drillField]||'').trim();
+    if(!vv||SEM_EQUIPE.includes(vv.toUpperCase())) return;
+    if(!seen.has(vv)) seen.set(vv,[]);
+    seen.get(vv).push(String(r.n||''));
   });
   const items=[...seen.entries()].sort((a,b)=>b[1].length-a[1].length);
   body.innerHTML='<div class="dtwrap"><table class="dt"><tr><th>Equipe</th><th class="num">Incidentes</th><th>Nºs</th></tr>'+
@@ -3083,6 +3083,29 @@ function addPrintBtns(){
     cont.appendChild(b);
   });
 }
+// ---- exportar Em Aberto acima do cluster de 8h (com/sem atribuição) ----
+function addOpen8hBtn(){
+  const sb=document.getElementById('seg-o1');
+  if(!sb) return;
+  const head=sb.querySelector('.seghead');
+  if(!head||head.querySelector('.open8h-btn')) return;
+  const b=document.createElement('button');
+  b.type='button'; b.className='print-btn open8h-btn';
+  b.title='Baixar todas as incidências em aberto com cluster de 8h ou mais (com ou sem atribuição)';
+  b.innerHTML='&#11015; +8h';
+  b.onclick=e=>{
+    e.stopPropagation();
+    const i8=CLUSTER.indexOf('8h-10h');
+    const rows=segBase('o1').filter(r=>r.s==='Aberto'&&!isIgnCausa(r)&&CLUSTER.indexOf(r.c)>=i8);
+    if(!rows.length){flashBtn(b,'#d1242f');return;}
+    const lines=[FULL_COLS.join(';')];
+    rows.forEach(r=>{const f=FULL[IDXOF.get(r)]; if(f) lines.push(f.map(csvCell).join(';'));});
+    downloadFile('incidencias_em_aberto_acima_8h.csv','\ufeff'+lines.join('\r\n'));
+    flashBtn(b,'#1a7f37');
+  };
+  const pb=head.querySelector('.print-btn');
+  if(pb) head.insertBefore(b,pb); else head.appendChild(b);
+}
 // ---- download da base ORIGINAL filtrada (Reincidentes / Improdutivo) ----
 function addExportBtns(){
   const map={
@@ -3134,6 +3157,7 @@ bindSegBars();
 bindDrill();
 addMaxBtns();
 addPrintBtns();
+addOpen8hBtn();
 addExportBtns();
 bindVcards();
 sw('d1');
