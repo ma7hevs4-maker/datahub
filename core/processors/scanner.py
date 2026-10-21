@@ -1,9 +1,9 @@
 """
 Tratamento do relatório M300 (Scanner 4.0 - RJ) exportado do Spotfire.
 
-Reproduz, em pandas, as 38 colunas de tratamento que hoje existem no
-modelo "Scanner 4.0 tratamento.xlsx" (fórmulas em BQ..DB). A saída preserva
-as 68 colunas originais + as 38 de tratamento, NA MESMA ORDEM do Excel, para
+Reproduz, em pandas, as 34 colunas de tratamento que hoje existem no
+modelo "Scanner 4.0 tratamento.xlsx" (colunas verdes BQ..CX). A saída preserva
+as 68 colunas originais + as 34 de tratamento, NA MESMA ORDEM do Excel, para
 que o dashboard (Lovable) consiga ler pelos nomes das colunas.
 
 Codificação do CSV do Spotfire: UTF-16 LE, separado por TAB.
@@ -115,7 +115,7 @@ def _piece(v, c0, c1, a, b, teto, baixo=0):
 
 
 def tratar_m300(caminho: Path, log_fn=print) -> pd.DataFrame:
-    """Lê o CSV UTF-16 do Spotfire e gera as 38 colunas de tratamento."""
+    """Lê o CSV UTF-16 do Spotfire e gera as 34 colunas de tratamento."""
     log_fn(f"  📖 Lendo arquivo M300: {caminho.name}")
     df = pd.read_csv(str(caminho), sep="\t", dtype=str, encoding="utf-16")
     df.columns = [str(c).strip() for c in df.columns]
@@ -202,7 +202,7 @@ def tratar_m300(caminho: Path, log_fn=print) -> pd.DataFrame:
     da = _intv.apply(lambda v: "Sem Intervalo" if (pd.isna(v) or v == 0) else "Com Intervalo")
     db = av.apply(lambda v: "Sem 1º Deslocamento" if (pd.isna(v) or v == 0) else "Com 1º Deslocamento")
 
-    # ── Montagem: 68 originais + 38 de tratamento (ordem do Excel) ──
+    # ── Montagem: 68 originais + 34 de tratamento (ordem do Excel) ──
     trat = [
         ("Dif Deslocamento e Inicio do calendario", bq),
         ("Deslocamento antes do calendario", br),
@@ -211,7 +211,7 @@ def tratar_m300(caminho: Path, log_fn=print) -> pd.DataFrame:
         ("Enel/Parceira", bu),
         ("Turno ", bv),
         ("Data", bw),
-        ("Data ", bx),
+        ("Data", bx),
         ("EQUIPE", by),
         ("POLO", bz),
         ("x", ca),
@@ -238,10 +238,6 @@ def tratar_m300(caminho: Path, log_fn=print) -> pd.DataFrame:
         ("TMR Improd.", cv),
         ("TML", None),
         ("H.E.(Min.)", None),
-        ("valida login", cy),
-        ("valida logoff", cz),
-        ("valida intervalo", da),
-        ("valida 1° deslocamento", db),
     ]
     frames = [df]
     for nome, serie in trat:

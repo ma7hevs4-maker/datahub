@@ -1,4 +1,7 @@
 import os
+# Proxy corporativo com certificado self-signed: permite ao webdriver-manager
+# baixar/validar o ChromeDriver sem falhar na verificação SSL.
+os.environ.setdefault("WDM_SSL_VERIFY", "0")
 import re
 import json
 import time
@@ -1173,6 +1176,43 @@ def _esperar_capa(driver, cap, timeout=25, log_fn=print):
     return _esperar_elemento(driver, xp, timeout, log_fn)
 
 
+def _achar_consulta_incidencia(driver):
+    """Acha o item exato 'Consulta Incidência' (não o 'Consulta Incidências OSM')."""
+    js = r"""
+    const alvo = 'consulta incidencia';
+    function norm(s){
+      return (s||'').replace(/\s+/g,' ').trim()
+        .normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();
+    }
+    const els = Array.from(document.querySelectorAll('span,div,a'));
+    const exatos = els.filter(e => {
+      const r=e.getBoundingClientRect(); const st=getComputedStyle(e);
+      if (r.width<=0||r.height<=0||st.display==='none'||st.visibility==='hidden') return false;
+      return norm(e.textContent) === alvo;
+    });
+    if (exatos.length) {
+      exatos.sort((a,b)=>{
+        const ra=a.getBoundingClientRect(), rb=b.getBoundingClientRect();
+        return (ra.width*ra.height)-(rb.width*rb.height);
+      });
+      return exatos[0];
+    }
+    // Fallback: contém, mas nunca OSM/Avisos/Baremos.
+    const contem = els.filter(e => {
+      const r=e.getBoundingClientRect(); const st=getComputedStyle(e);
+      if (r.width<=0||r.height<=0||st.display==='none'||st.visibility==='hidden') return false;
+      const n=norm(e.textContent);
+      return n.includes(alvo) && !n.includes('osm') && !n.includes('aviso') && !n.includes('baremo');
+    });
+    contem.sort((a,b)=>norm(a.textContent).length-norm(b.textContent).length);
+    return contem[0] || null;
+    """
+    try:
+        return driver.execute_script(js)
+    except Exception:
+        return None
+
+
 def _navegar_consulta(driver, caps, pasta_local, log_fn=print, stop_event=None) -> bool:
     _clicar(driver, caps.get("abrir_lateral"), log_fn)
     if not _esperar_capa(driver, caps.get("menu_auditoria"), 25, log_fn):
@@ -1180,11 +1220,31 @@ def _navegar_consulta(driver, caps, pasta_local, log_fn=print, stop_event=None) 
         _salvar_diagnostico(driver, pasta_local, log_fn, "_falha_lateral")
         return False
     _clicar(driver, caps.get("menu_auditoria"), log_fn)
-    if not _esperar_capa(driver, caps.get("consulta_incidencia"), 25, log_fn):
+
+    # Não usa o texto capturado com contains: 'Consulta Incidências OSM'
+    # também contém 'Consulta Incidência'. Localiza o item exato (singular).
+    try:
+        item = WebDriverWait(driver, 25).until(
+            lambda d: _achar_consulta_incidencia(d)
+        )
+    except Exception:
         log_fn("  ⚠️  'Consulta Incidência' não apareceu após clicar em Auditoria.")
         _salvar_diagnostico(driver, pasta_local, log_fn, "_falha_auditoria")
         return False
-    _clicar(driver, caps.get("consulta_incidencia"), log_fn)
+
+    try:
+        log_fn(f"  ▶ clicando em '{item.text.strip()}'")
+        driver.execute_script(
+            "arguments[0].scrollIntoView({block:'center'});", item
+        )
+        time.sleep(0.3)
+        _mouse_clicar(driver, *_coords_viewport(driver, item))
+        time.sleep(1.3)
+    except Exception as e:
+        log_fn(f"  ⚠️  Falha ao clicar em 'Consulta Incidência': {e}")
+        _salvar_diagnostico(driver, pasta_local, log_fn, "_falha_consulta")
+        return False
+
     if _esperar_elemento(driver, "//input[@placeholder='Selecione uma data']",
                          timeout=45, log_fn=log_fn):
         log_fn("  ✅ formulário de consulta carregado (campos de data visíveis).")

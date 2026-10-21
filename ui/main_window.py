@@ -28,7 +28,7 @@ from PyQt6.QtWidgets import (
     QLabel, QPushButton, QComboBox, QRadioButton, QButtonGroup,
     QLineEdit, QCheckBox, QPlainTextEdit, QFileDialog, QMessageBox,
     QDateEdit, QFrame, QStackedWidget, QCalendarWidget, QDialog, QScrollArea,
-    QSystemTrayIcon, QMenu,
+    QSystemTrayIcon, QMenu, QSizePolicy,
 )
 
 from config import AppConfig, save_config
@@ -431,11 +431,22 @@ class MainWindow(QMainWindow):
 
         h.addWidget(self._build_rail())
         h.addWidget(self._build_content(), stretch=1)
+
+        # Labels de dica longos não podem ditar a largura da página (sem isso,
+        # o Qt estica o conteúdo para a direita e corta o layout).
+        for lbl in self.findChildren(QLabel):
+            if lbl.objectName() == "HintLabel":
+                lbl.setWordWrap(True)
+                lbl.setMinimumWidth(0)
+        self._stack.setMinimumWidth(0)
+
         self._goto(0)
 
         # altura uniforme e legível para TODOS os campos (line/edit/combo/date)
         for campo in self.findChildren((QLineEdit, QComboBox, QDateEdit)):
             campo.setFixedHeight(34)
+        for campo in self.findChildren(QLineEdit):
+            campo.setMinimumWidth(0)
 
     def _build_rail(self):
         rail = QWidget(objectName="Rail")
@@ -500,6 +511,11 @@ class MainWindow(QMainWindow):
         v.addWidget(sep)
 
         self._stack = QStackedWidget()
+        # Deixa o QScrollArea mandar na largura. Sem isso, labels longos fazem
+        # o sizeHint do stack crescer e o conteúdo estica para a direita.
+        self._stack.setSizePolicy(
+            QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred
+        )
         area = QScrollArea()
         area.setWidgetResizable(True)
         area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
@@ -566,17 +582,21 @@ class MainWindow(QMainWindow):
         mw.addWidget(QLabel("Execução", objectName="SectionLabel"))
         self._modo = QButtonGroup(self)
         modo_row = QHBoxLayout()
-        modo_row.setSpacing(18)
+        modo_row.setSpacing(12)
         for txt, val in (("Uma vez", "uma_vez"),
-                         ("A cada 30 min", "30min"),
-                         ("A cada 60 min", "60min")):
+                         ("3 min", "3min"),
+                         ("30 min", "30min"),
+                         ("60 min", "60min")):
             rb = QRadioButton(txt)
-            self._modo.addButton(rb, {"uma_vez": 0, "30min": 1, "60min": 2}[val])
+            self._modo.addButton(rb, {"uma_vez": 0, "3min": 1, "30min": 2, "60min": 3}[val])
             if val == "uma_vez":
                 rb.setChecked(True)
             modo_row.addWidget(rb)
         modo_row.addStretch(1)
         mw.addLayout(modo_row)
+        mw.addWidget(QLabel(
+            "O intervalo é a pausa após o fim de cada execução.",
+            objectName="HintLabel"))
         v.addWidget(self._card(modow))
 
         btn_row = QHBoxLayout()
@@ -725,13 +745,16 @@ class MainWindow(QMainWindow):
         ov.setSpacing(10)
         ov.addWidget(QLabel("Fontes do relatório", objectName="SectionLabel"))
         self._fontes_var = {}
-        for txt, val in (("Operview", "operview"),):
+        for txt, val in (
+            ("Operview", "operview"),
+            ("M300 — deslocamentos", "m300"),
+        ):
             cb = QCheckBox(txt)
             cb.setObjectName(f"fonte_{val}")
             self._fontes_var[val] = cb
             ov.addWidget(cb)
         ov.addWidget(QLabel(
-            "Relatório gerado a partir do Operview.",
+            "Fontes independentes: Operview e/ou M300.",
             objectName="HintLabel"))
         v.addWidget(self._card(orig))
 
@@ -755,6 +778,36 @@ class MainWindow(QMainWindow):
             row.addWidget(var, stretch=1)
             op.addLayout(row)
         v.addWidget(self._card(opv))
+
+        spot = QWidget()
+        sp = QVBoxLayout(spot)
+        sp.setContentsMargins(0, 0, 0, 0)
+        sp.setSpacing(10)
+        sp.addWidget(QLabel("Spotfire (M300)", objectName="SectionLabel"))
+        for label, key, secret in (
+            ("URL Scanner", "spot_url", False),
+            ("URL Hoje", "spot_url_hoje", False),
+            ("Login", "spot_login", False),
+            ("Senha", "spot_senha", True),
+        ):
+            row = QHBoxLayout()
+            row.setSpacing(10)
+            row.addWidget(QLabel(label))
+            var = QLineEdit()
+            if secret:
+                var.setEchoMode(QLineEdit.EchoMode.Password)
+            if key == "spot_url_hoje":
+                var.setPlaceholderText(
+                    "Opcional — cole a URL completa da análise de Produtividade"
+                )
+            self._vars_cfg[key] = var
+            row.addWidget(var, stretch=1)
+            sp.addLayout(row)
+        sp.addWidget(QLabel(
+            "URL Hoje é opcional. Hoje roda a cada execução; bases mensais no "
+            "6º loop (conferência no 12º) ou em 'Uma vez'.",
+            objectName="HintLabel"))
+        v.addWidget(self._card(spot))
 
         apar = QWidget()
         ap = QVBoxLayout(apar)
@@ -787,7 +840,7 @@ class MainWindow(QMainWindow):
         pasta_row.addWidget(b)
         gn.addLayout(pasta_row)
 
-        self._vars_cfg["sp_enabled"] = QCheckBox("Enviar para SharePoint")
+        self._vars_cfg["sp_enabled"] = QCheckBox("Enviar p/ SharePoint")
         self._vars_cfg["sp_enabled"].toggled.connect(self._toggle_sp)
         gn.addWidget(self._vars_cfg["sp_enabled"])
 
@@ -808,7 +861,7 @@ class MainWindow(QMainWindow):
         sp_row.addWidget(bsp)
         gn.addLayout(sp_row)
 
-        self._vars_cfg["n8n_enabled"] = QCheckBox("Enviar análises para n8n")
+        self._vars_cfg["n8n_enabled"] = QCheckBox("Enviar para n8n")
         self._vars_cfg["n8n_enabled"].toggled.connect(self._toggle_n8n)
         gn.addWidget(self._vars_cfg["n8n_enabled"])
 
@@ -821,8 +874,11 @@ class MainWindow(QMainWindow):
         n8n_row.addWidget(v_n8n, stretch=1)
         gn.addLayout(n8n_row)
 
-        self._vars_cfg["base_mensal_enabled"] = QCheckBox("Atualizar base mensal (mensal)")
+        self._vars_cfg["base_mensal_enabled"] = QCheckBox("Atualizar base mensal")
         gn.addWidget(self._vars_cfg["base_mensal_enabled"])
+
+        self._vars_cfg["db_enabled"] = QCheckBox("Enviar para PostgreSQL")
+        gn.addWidget(self._vars_cfg["db_enabled"])
         v.addWidget(self._card(gen))
 
         upd = QWidget()
@@ -838,7 +894,10 @@ class MainWindow(QMainWindow):
         bupd.clicked.connect(self._verificar_update)
         u.addWidget(bupd, alignment=Qt.AlignmentFlag.AlignLeft)
         if REPO:
-            u.addWidget(QLabel(f"Repositório: {REPO}"))
+            lbl_repo = QLabel(f"Repo: {REPO}")
+            lbl_repo.setWordWrap(True)
+            lbl_repo.setMinimumWidth(0)
+            u.addWidget(lbl_repo)
         v.addWidget(self._card(upd))
 
         save = QPushButton("💾  Salvar configurações", objectName="Primary")
@@ -866,7 +925,7 @@ class MainWindow(QMainWindow):
             return
         self._btn_executar.setEnabled(False)
         self._btn_parar.setEnabled(True)
-        modo = {0: "uma_vez", 1: "30min", 2: "60min"}[self._modo.checkedId()]
+        modo = {0: "uma_vez", 1: "3min", 2: "30min", 3: "60min"}[self._modo.checkedId()]
         self._on_executar(
             selecionados=self._fontes_selecionadas(),
             data_ini=data_ini,
@@ -876,7 +935,7 @@ class MainWindow(QMainWindow):
         )
 
     def _fontes_selecionadas(self) -> list[str]:
-        """Retorna as fontes marcadas nos checkboxes (apenas operview)."""
+        """Retorna as fontes marcadas nos checkboxes (Operview e/ou M300)."""
         return [v for v, cb in self._fontes_var.items() if cb.isChecked()]
 
     def _parar(self):
@@ -1005,6 +1064,10 @@ class MainWindow(QMainWindow):
         self._vars_cfg["opv_url"].setText(cfg.operview.url)
         self._vars_cfg["opv_login"].setText(cfg.operview.login)
         self._vars_cfg["opv_senha"].setText(cfg.operview.senha)
+        self._vars_cfg["spot_url"].setText(cfg.spotfire.url)
+        self._vars_cfg["spot_url_hoje"].setText(cfg.spotfire.url_hoje)
+        self._vars_cfg["spot_login"].setText(cfg.spotfire.login)
+        self._vars_cfg["spot_senha"].setText(cfg.spotfire.senha)
         for val, cb in self._fontes_var.items():
             cb.setChecked(val in cfg.fontes)
         self._vars_cfg["pasta_local"].setText(cfg.pasta_local)
@@ -1013,6 +1076,7 @@ class MainWindow(QMainWindow):
         self._vars_cfg["n8n_enabled"].setChecked(cfg.n8n.enabled)
         self._vars_cfg["n8n_webhook"].setText(cfg.n8n.webhook)
         self._vars_cfg["base_mensal_enabled"].setChecked(cfg.base_mensal_enabled)
+        self._vars_cfg["db_enabled"].setChecked(bool(cfg.db_enabled))
         self._chk_claro.setChecked(bool(cfg.tema_claro))
         self._toggle_sp()
         self._toggle_n8n()
@@ -1022,6 +1086,10 @@ class MainWindow(QMainWindow):
         cfg.operview.url = self._vars_cfg["opv_url"].text().strip()
         cfg.operview.login = self._vars_cfg["opv_login"].text().strip()
         cfg.operview.senha = self._vars_cfg["opv_senha"].text().strip()
+        cfg.spotfire.url = self._vars_cfg["spot_url"].text().strip()
+        cfg.spotfire.url_hoje = self._vars_cfg["spot_url_hoje"].text().strip()
+        cfg.spotfire.login = self._vars_cfg["spot_login"].text().strip()
+        cfg.spotfire.senha = self._vars_cfg["spot_senha"].text().strip()
         cfg.fontes = self._fontes_selecionadas()
         cfg.origem_relatorio = "operview" if "operview" in cfg.fontes else "geonline"
         cfg.pasta_local = self._vars_cfg["pasta_local"].text().strip()
@@ -1031,6 +1099,7 @@ class MainWindow(QMainWindow):
         cfg.n8n.webhook = self._vars_cfg["n8n_webhook"].text().strip()
         cfg.webhook_n8n = cfg.n8n.webhook
         cfg.base_mensal_enabled = self._vars_cfg["base_mensal_enabled"].isChecked()
+        cfg.db_enabled = self._vars_cfg["db_enabled"].isChecked()
         cfg.tema_claro = self._chk_claro.isChecked()
 
         if not cfg.pasta_local:

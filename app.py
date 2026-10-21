@@ -3,17 +3,29 @@ DataHub v2 — Entry point.
 Conecta GUI → Scheduler → Downloaders → Processors → Integrations.
 """
 import os
+import json
 import shutil
 import threading
 import time
 import unicodedata
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 from config import load_config, AppConfig
 from core.scheduler import Scheduler
 from core.downloader.geonline import baixar_incidencias
 from core.downloader.operview import baixar_incidencias as baixar_operview
+try:
+    from core.downloader.spotfire import (
+        baixar_deslocamentos_hoje,
+        baixar_bases_scanner_mensais,
+        NOME_M300_HOJE,
+    )
+except Exception:
+    # Se o build não incluir o módulo, o Operview continua funcionando.
+    baixar_deslocamentos_hoje = None
+    baixar_bases_scanner_mensais = None
+    NOME_M300_HOJE = "m300_deslocamentos_hoje.csv"
 from core.processors.incidencias import tratar_incidencias, gerar_analises_n8n
 from core.processors.dashboard_html import gerar_dashboard_html
 from core.base_mensal import atualizar_base_mensal
@@ -70,6 +82,61 @@ def _filtrar_polo(df, polo: str, log_fn=print):
     return resultado
 
 
+# ── Estado do M300 (6º loop + conferência no 12º) ────────────────────────────
+
+def _m300_state_path() -> Path:
+    base = Path(os.environ.get("APPDATA") or Path.home()) / "DataHub"
+    base.mkdir(parents=True, exist_ok=True)
+    return base / "m300_estado.json"
+
+
+def _ler_estado_m300() -> dict:
+    try:
+        p = _m300_state_path()
+        if p.exists():
+            data = json.loads(p.read_text(encoding="utf-8"))
+            return data if isinstance(data, dict) else {}
+    except Exception:
+        pass
+    return {}
+
+
+def _salvar_estado_m300(estado: dict) -> None:
+    try:
+        p = _m300_state_path()
+        tmp = p.with_suffix(".tmp")
+        tmp.write_text(
+            json.dumps(estado, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+        os.replace(str(tmp), str(p))
+    except Exception:
+        pass
+
+
+def _m300_loop_atual() -> dict:
+    """Incrementa e devolve o contador de loops do M300 no dia.
+
+    O estado fica em %APPDATA%\\DataHub\\m300_estado.json para sobreviver a
+    reinícios do app. O contador zera na virada do dia.
+    """
+    hoje = datetime.now().strftime("%Y-%m-%d")
+    estado = _ler_estado_m300()
+    if estado.get("data") != hoje:
+        estado = {
+            "data": hoje,
+            "loops": 0,
+            "geral_em": None,
+            "base_ate": None,
+        }
+    try:
+        estado["loops"] = int(estado.get("loops", 0)) + 1
+    except Exception:
+        estado["loops"] = 1
+    _salvar_estado_m300(estado)
+    return estado
+
+
 # ── App ───────────────────────────────────────────────────────────────────────
 
 class App:
@@ -98,11 +165,14 @@ class App:
         self._cancelado.set()
         self._cancelado = threading.Event()
         token = self._cancelado
+        self._n8n_loop = 0
 
         def fluxo():
             self._window.set_rodando(True)
             if token.is_set():
                 return
+            self._n8n_loop += 1
+            loop_atual = self._n8n_loop
             # Recalcula datas a cada iteração para detectar virada de dia
             agora = datetime.now()
             if modo == "uma_vez":
@@ -113,7 +183,10 @@ class App:
                 delta = data_fim - data_ini
                 ini = (fim - delta).replace(hour=0, minute=0, second=0)
 
-            self._executar_fluxo(selecionados, ini, fim, token, polo=polo)
+            self._executar_fluxo(
+                selecionados, ini, fim, token, polo=polo, modo=modo,
+                loop_atual=loop_atual,
+            )
             self._window.set_rodando(False)
             if modo == "uma_vez" and not token.is_set():
                 self._window.mostrar_concluido("Fluxo concluído com sucesso!")
@@ -178,7 +251,9 @@ class App:
 
     def _executar_fluxo(self, selecionados: list, data_ini: datetime, data_fim: datetime,
                         token: threading.Event | None = None,
-                        polo: str = "Todos os polos"):
+                        polo: str = "Todos os polos",
+                        modo: str = "uma_vez",
+                        loop_atual: int = 1):
         cfg = self._cfg
         pasta = str(Path(cfg.pasta_local).resolve())
 
@@ -205,10 +280,13 @@ class App:
         if polo != "Todos os polos":
             self._log(f"  🔍 Filtro de polo: {polo}")
 
-        # Apenas Operview está ativa (M300 removido das configurações do DataHub).
+        # Fontes independentes: uma falha não impede a outra nem o SharePoint.
         if "operview" in selecionados:
             try:
-                self._executar_operview(data_ini, data_fim, token, polo=polo)
+                self._executar_operview(
+                    data_ini, data_fim, token, polo=polo,
+                    modo=modo, loop_atual=loop_atual,
+                )
             except Exception as e:
                 self._log(f"❌ Operview falhou: {e}")
                 import traceback as _tb2
@@ -220,22 +298,36 @@ class App:
                 except Exception:
                     pass
 
+        if "m300" in selecionados:
+            if token and token.is_set():
+                return
+            try:
+                self._executar_m300(token, modo=modo)
+            except Exception as e:
+                self._log(f"❌ M300 falhou: {e}")
+                import traceback as _tb3
+                self._log(_tb3.format_exc())
+
         if cfg.sharepoint.enabled and cfg.sharepoint.pasta:
             if token and token.is_set():
                 return
             self._log("📤 Sincronizando com SharePoint...")
             try:
                 arquivos = []
-                for nome in ("incidencias_tratado.xlsx", "dashboard_incidencias.html"):
+                for nome in (
+                    "incidencias_tratado.xlsx",
+                    "dashboard_incidencias.html",
+                    NOME_M300_HOJE,
+                ):
                     f = Path(pasta) / nome
                     if f.exists():
                         arquivos.append(f)
-                base_dir = Path(pasta) / "bases_mensais" / "incidencias"
-                if base_dir.exists():
-                    agora = time.time()
-                    for f in base_dir.iterdir():
-                        if f.is_file() and (agora - f.stat().st_mtime) < 600:
-                            arquivos.append(f)
+                for sub in ("incidencias", "deslocamentos", "tabela_completa"):
+                    base_dir = Path(pasta) / "bases_mensais" / sub
+                    if base_dir.exists():
+                        for f in base_dir.iterdir():
+                            if f.is_file() and f.suffix.lower() == ".xlsx":
+                                arquivos.append(f)
                 if arquivos:
                     sincronizar(arquivos, cfg.sharepoint.pasta, self._log)
                 else:
@@ -246,7 +338,9 @@ class App:
         self._log("🏁 Fluxo concluído.")
 
     def _executar_operview(self, data_ini, data_fim, token,
-                           polo: str = "Todos os polos"):
+                           polo: str = "Todos os polos",
+                           modo: str = "uma_vez",
+                           loop_atual: int = 1):
         cfg = self._cfg
         pasta = str(Path(cfg.pasta_local).resolve())
         self._log("📥 Baixando Operview — Incidências...")
@@ -275,11 +369,16 @@ class App:
         else:
             self._log("  ⏭️  Base mensal desativada.")
 
-        if gravar_incidencias is not None:
-            try:
-                gravar_incidencias(df_full, log_fn=self._log)
-            except Exception as e:
-                self._log(f"❌ Banco falhou (o fluxo continua): {e}")
+        if cfg.db_enabled:
+            if gravar_incidencias is not None:
+                try:
+                    gravar_incidencias(df_full, log_fn=self._log)
+                except Exception as e:
+                    self._log(f"❌ Banco falhou (o fluxo continua): {e}")
+            else:
+                self._log("  ⚠️  Banco habilitado, mas módulo db_sync não está disponível.")
+        else:
+            self._log("  ⏭️  Envio para PostgreSQL desativado.")
 
         try:
             self._log("  📊 Gerando dashboard HTML...")
@@ -289,12 +388,131 @@ class App:
         except Exception as e:
             self._log(f"❌ Dashboard falhou: {e}")
 
-        if cfg.n8n.enabled and cfg.n8n.webhook:
+        enviar_n8n = True
+        if modo == "3min":
+            enviar_n8n = (loop_atual % 3 == 0)
+
+        if not enviar_n8n:
+            self._log(
+                f"  ⏭️  n8n: modo 3 min, loop {loop_atual}; "
+                "envio apenas a cada 3 loops."
+            )
+        elif cfg.n8n.enabled and cfg.n8n.webhook:
             self._log("  📡 Enviando análises para n8n...")
             payload = gerar_analises_n8n(df)
             enviar(payload, cfg.n8n.webhook, self._log)
         else:
             self._log("  ⏭️  Envio n8n desativado.")
+
+    # ── M300 (deslocamentos) ──────────────────────────────────────────────────
+
+    def _executar_m300(self, token, modo: str = "uma_vez"):
+        """Baixa os deslocamentos do dia e as bases mensais do Scanner.
+
+        Hoje (Produtividade): Deslocamentos + Painel Acompanhamento, com merge
+        por Equipe. Scanner: janela de 2 meses com upsert em
+        `bases_mensais/deslocamentos` e `bases_mensais/tabela_completa`.
+        Em 'uma_vez', o Scanner roda sempre. Nos modos de loop (10/30/60 min),
+        ele roda no 6º loop do dia, com conferência no 12º. O estado fica em
+        %APPDATA%\\DataHub\\m300_estado.json.
+        """
+        cfg = self._cfg
+        pasta = str(Path(cfg.pasta_local).resolve())
+        if not (cfg.spotfire.url or cfg.spotfire.url_hoje):
+            self._log("  ⚠️  M300: URL do Spotfire não configurada — pulando.")
+            return
+        if (baixar_deslocamentos_hoje is None
+                or baixar_bases_scanner_mensais is None):
+            self._log("  ⚠️  M300 indisponível neste build (módulo Spotfire não incluído).")
+            return
+
+        estado = _m300_loop_atual()
+        loops = estado.get("loops", 1)
+        data = estado.get("data", datetime.now().strftime("%Y-%m-%d"))
+        ontem = (
+            datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+            - timedelta(days=1)
+        ).strftime("%Y-%m-%d")
+        base_ate = str(estado.get("base_ate") or "")
+        desloc_dir = Path(pasta) / "bases_mensais" / "deslocamentos"
+        tc_dir = Path(pasta) / "bases_mensais" / "tabela_completa"
+        tem_bases = (
+            desloc_dir.exists() and any(desloc_dir.glob("*.xlsx"))
+            and tc_dir.exists() and any(tc_dir.glob("*.xlsx"))
+        )
+        self._log(f"  🔁 M300 — loop {loops} do dia ({data})")
+
+        def _liberado():
+            tentativa = estado.get("geral_tentativa")
+            if not tentativa:
+                return True
+            try:
+                return (
+                    datetime.now() - datetime.fromisoformat(tentativa)
+                ) >= timedelta(minutes=30)
+            except Exception:
+                return True
+
+        # Scanner principal no 6º loop; conferência no 12º (e a cada 6 loops
+        # depois disso, caso a base ainda não tenha o d-1).
+        conferencia = loops >= 12 and (loops - 12) % 6 == 0
+        deve_geral = False
+        if modo == "uma_vez":
+            deve_geral = True
+            self._log("  ℹ️  Modo 'Uma vez': Scanner também será executado.")
+        elif loops == 1 and not tem_bases:
+            deve_geral = True
+            self._log("  ℹ️  Bases mensais ainda não existem — baixando nesta primeira execução.")
+        elif loops == 6 and not estado.get("geral_em"):
+            if _liberado():
+                deve_geral = True
+                self._log("  ℹ️  6º loop: executando as bases mensais do Scanner.")
+        elif conferencia:
+            if tem_bases and base_ate and base_ate >= ontem:
+                self._log(
+                    f"  ✅ Conferência do {loops}º loop: a base já contém "
+                    f"{ontem} (d-1); nada a baixar."
+                )
+            elif loops == 12 or _liberado():
+                deve_geral = True
+                self._log(
+                    f"  ⚠️  Conferência do {loops}º loop: base não contém "
+                    f"{ontem} (d-1); executando o Scanner."
+                )
+
+        if deve_geral:
+            estado["geral_tentativa"] = datetime.now().isoformat(timespec="seconds")
+            _salvar_estado_m300(estado)
+
+        self._log("📥 M300 — deslocamentos do dia atual (Deslocamentos + Painel)...")
+        try:
+            p = baixar_deslocamentos_hoje(cfg.spotfire, pasta, self._log, token)
+            self._log(f"  ✅ Hoje: {p.name} ({p.stat().st_size} bytes)")
+        except Exception as e:
+            self._log(f"  ❌ M300 hoje falhou: {e}")
+
+        if not deve_geral:
+            return
+        if token and token.is_set():
+            return
+
+        self._log("📥 M300 — bases mensais (mês atual + anterior, sem filtros extras)...")
+        try:
+            arquivos, base_ate_novo = baixar_bases_scanner_mensais(
+                cfg.spotfire, pasta, self._log, token
+            )
+            estado["geral_em"] = data
+            if base_ate_novo:
+                estado["base_ate"] = base_ate_novo
+            _salvar_estado_m300(estado)
+            self._log(
+                "  ✅ Bases mensais: "
+                + ", ".join(f"{p.parent.name}/{p.name}" for p in arquivos)
+            )
+            if base_ate_novo:
+                self._log(f"  🗓️  Última data na base: {base_ate_novo}")
+        except Exception as e:
+            self._log(f"  ❌ M300 bases mensais falharam: {e}")
 
     # ── Tratamento avulso ─────────────────────────────────────────────────────
 
@@ -351,3 +569,4 @@ if __name__ == "__main__":
         gravar_login_operview(cfg=_cfg.operview, log_fn=print)
         sys.exit(0)
     App().run()
+

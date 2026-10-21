@@ -25,8 +25,11 @@ class OperviewConfig:
 
 @dataclass
 class SpotfireConfig:
-    # M300 reside na mesma análise (/M300/Scanner 4.0 - RJ); uma só URL.
+    # M300 tem duas análises: a do Scanner (base geral/histórica) e a de
+    # Produtividade (dia atual). `url_hoje` é opcional; se ficar vazia,
+    # derivamos a URL de Produtividade a partir de `url`.
     url: str = ""
+    url_hoje: str = ""
     login: str = ""
     senha: str = ""
 
@@ -50,13 +53,13 @@ class AppConfig:
     spotfire: SpotfireConfig = field(default_factory=SpotfireConfig)
     sharepoint: SharePointConfig = field(default_factory=SharePointConfig)
     n8n: N8nConfig = field(default_factory=N8nConfig)
-    # Fontes selecionáveis no fluxo (checkbox). Apenas Operview está ativa
-    # (M300 removido das configurações do DataHub).
+    # Fontes selecionáveis no fluxo (checkbox): Operview e/ou M300.
     fontes: list[str] = field(default_factory=lambda: ["operview"])
     origem_relatorio: str = "geonline"  # OBSOLETO: migrado p/ `fontes`
     pasta_local: str = ""
     webhook_n8n: str = ""
     base_mensal_enabled: bool = True
+    db_enabled: bool = False
     tema_claro: bool = False
 
 
@@ -87,7 +90,9 @@ def load_config() -> AppConfig:
 
         # Migração: campo antigo `origem_relatorio` -> `fontes`
         if "fontes" in data and isinstance(data["fontes"], list):
-            cfg.fontes = [str(f) for f in data["fontes"] if f == "operview"]
+            cfg.fontes = [
+                str(f) for f in data["fontes"] if f in ("operview", "m300")
+            ]
         elif data.get("origem_relatorio") == "operview":
             cfg.fontes = ["operview"]
         elif data.get("origem_relatorio") == "geonline":
@@ -99,6 +104,7 @@ def load_config() -> AppConfig:
         cfg.pasta_local = data.get("pasta_local", "")
         cfg.webhook_n8n = data.get("webhook_n8n", "")
         cfg.base_mensal_enabled = data.get("base_mensal_enabled", True)
+        cfg.db_enabled = data.get("db_enabled", False)
         cfg.tema_claro = data.get("tema_claro", False)
         return cfg
     except Exception:

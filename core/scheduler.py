@@ -13,6 +13,7 @@ class Scheduler:
 
     INTERVALOS = {
         "uma_vez": None,
+        "3min": 3 * 60,
         "30min": 30 * 60,
         "60min": 60 * 60,
     }

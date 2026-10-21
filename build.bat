@@ -42,6 +42,7 @@ python -m PyInstaller --noconfirm ^
     --hidden-import=core.base_mensal ^
     --hidden-import=core.downloader.geonline ^
     --hidden-import=core.downloader.operview ^
+    --hidden-import=core.downloader.spotfire ^
     --hidden-import=core.scheduler ^
     --hidden-import=integrations.sharepoint ^
     --hidden-import=integrations.n8n ^

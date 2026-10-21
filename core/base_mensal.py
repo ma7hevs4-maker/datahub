@@ -7,56 +7,138 @@ Lógica de UPSERT por mês:
     deduplica pela chave (ex: "Número"), mantendo a versão mais recente.
   - Se não existe: cria o arquivo com os dados novos.
 """
+import hashlib
+import json
 import os
+import time
 import warnings
+import numpy as np
 import pandas as pd
 from pathlib import Path
 
 warnings.filterwarnings("ignore", category=UserWarning, module="openpyxl")
 
-# Coluna usada como chave de deduplicação/upsert por relatório
+# Coluna(s) usada(s) como chave de deduplicação/upsert por relatório.
+# Para deslocamentos, a chave composta evita duplicar a mesma ordem/equipe/dia
+# quando o Spotfire reexporta a base com horários atualizados.
 CHAVE_UPSERT = {
     "incidencias": "Número",
     "scanner": None,       # dedup por linha inteira se None
-    "deslocamentos": None,
+    "deslocamentos": [
+        "Data Referência", "Equipe", "Nr_Ordem", "Despachada",
+    ],
+    "tabela_completa": [
+        "Data Referência", "Equipe", "Nr_Ordem", "Despachada",
+    ],
 }
+
+
+def _chave_series(df: pd.DataFrame, chave):
+    """Série com o valor da chave (string simples ou composta por '|')."""
+    if not chave:
+        return None
+    cols = [chave] if isinstance(chave, str) else list(chave)
+    if not cols or any(c not in df.columns for c in cols):
+        return None
+    serie = df[cols[0]].astype(str).str.strip()
+    for c in cols[1:]:
+        serie = serie + "|" + df[c].astype(str).str.strip()
+    return serie
+
+
+# Colunas voláteis que não devem invalidar o cache de um mês sem mudança real.
+_HASH_IGNORAR = {"x", "DATA_ETL"}
+
+# Cache fica fora da pasta do SharePoint, para não sujar bases_mensais.
+_CACHE_DIR = (
+    Path(os.environ.get("APPDATA") or Path.home())
+    / "DataHub" / "cache_bases_mensais"
+)
+
+
+def _hash_grupo(df: pd.DataFrame, chave) -> str:
+    """Hash estável do conteúdo do mês (ordena pela chave antes)."""
+    d = df.copy()
+    ignorar = [c for c in _HASH_IGNORAR if c in d.columns]
+    if ignorar:
+        d = d.drop(columns=ignorar)
+    cols = [chave] if isinstance(chave, str) else (list(chave) if chave else [])
+    if cols and all(c in d.columns for c in cols):
+        d = d.sort_values(cols, kind="mergesort")
+    h = hashlib.sha256()
+    h.update(pd.util.hash_pandas_object(d, index=False).values.tobytes())
+    return h.hexdigest()
+
+
+def _concat_dados(a: pd.DataFrame, b: pd.DataFrame) -> pd.DataFrame:
+    """Concatena por posição, sem alinhar rótulos.
+
+    A Tabela Completa tem colunas duplicadas (Data, Utilização, ...). O
+    pd.concat tenta alinhar esses rótulos e lança InvalidIndexError. Aqui
+    usamos numpy e mantemos os cabeçalhos (inclusive duplicados) de `b`.
+    """
+    if a is None or len(a) == 0:
+        return b
+    if b is None or len(b) == 0:
+        return a
+    if len(a.columns) != len(b.columns):
+        # Fallback para schemas diferentes.
+        return pd.concat([a, b], ignore_index=True)
+    arr = np.vstack([
+        a.to_numpy(dtype=object),
+        b.to_numpy(dtype=object),
+    ])
+    return pd.DataFrame(arr, columns=b.columns)
 
 
 def _upsert_mes(
     caminho: Path,
     novos: pd.DataFrame,
-    chave: str | None,
+    chave,
     log_fn=print,
-) -> tuple[int, int]:
+) -> tuple[int, int, int]:
     """
     Faz upsert de `novos` no arquivo `caminho`.
+    `chave` pode ser uma coluna (str), várias colunas (list) ou None.
     Retorna (total_final, adicionados, atualizados).
     """
-    if not chave or chave not in novos.columns:
+    t0 = time.time()
+    chave_novos = _chave_series(novos, chave)
+
+    if chave_novos is None:
         # Sem chave: usa linha inteira para dedup
         if caminho.exists():
             existentes = pd.read_excel(str(caminho), dtype=str)
-            combinado = pd.concat([existentes, novos], ignore_index=True)
+            combinado = _concat_dados(existentes, novos)
             antes = len(combinado)
             combinado = combinado.drop_duplicates(keep="last")
-            depois = len(combinado)
-            adicionados = antes - depois
+            adicionados = antes - len(combinado)
         else:
-            combinado = novos
+            combinado = novos.drop_duplicates(keep="last")
             adicionados = len(combinado)
+        atualizados = 0
     else:
-        # Com chave: upsert baseado na coluna chave
+        # Dedup dentro do próprio lote novo (o Spotfire pode repetir a chave).
+        duplicados = int(chave_novos.duplicated(keep="last").sum())
+        if duplicados:
+            log_fn(f"    🧹 {duplicados} linha(s) duplicada(s) no lote — mantendo a última")
+            novos = novos.loc[~chave_novos.duplicated(keep="last")].copy()
+            chave_novos = _chave_series(novos, chave)
+
         if caminho.exists():
             existentes = pd.read_excel(str(caminho), dtype=str)
-            # IDs dos novos
-            ids_novos = set(novos[chave].astype(str).str.strip())
-            # Remove dos existentes os que serão atualizados
-            mantidos = existentes[
-                ~existentes[chave].astype(str).str.strip().isin(ids_novos)
-            ]
-            atualizados = len(existentes) - len(mantidos)
-            combinado = pd.concat([mantidos, novos], ignore_index=True)
-            adicionados = len(novos) - atualizados
+            chave_existentes = _chave_series(existentes, chave)
+            if chave_existentes is None:
+                log_fn("    ⚠️  Chave não encontrada no arquivo existente; dedup por linha inteira")
+                combinado = _concat_dados(existentes, novos).drop_duplicates(keep="last")
+                adicionados = max(0, len(combinado) - len(existentes))
+                atualizados = 0
+            else:
+                ids_novos = set(chave_novos)
+                mantidos = existentes[~chave_existentes.isin(ids_novos)]
+                atualizados = len(existentes) - len(mantidos)
+                combinado = _concat_dados(mantidos, novos)
+                adicionados = len(novos) - atualizados
         else:
             combinado = novos
             adicionados = len(combinado)
@@ -64,8 +146,21 @@ def _upsert_mes(
 
     tmp_path = caminho.with_suffix(".tmp.xlsx")
     combinado.to_excel(str(tmp_path), index=False)
-    os.replace(str(tmp_path), str(caminho))
-    return len(combinado), adicionados, atualizados if chave else 0
+    ultimo_erro = None
+    for tentativa in range(10):
+        try:
+            os.replace(str(tmp_path), str(caminho))
+            break
+        except OSError as e:
+            ultimo_erro = e
+            time.sleep(1)
+    else:
+        raise ultimo_erro
+    log_fn(
+        f"    ⏱️ {caminho.name}: {len(combinado)} linhas "
+        f"gravadas em {time.time() - t0:.1f}s"
+    )
+    return len(combinado), adicionados, atualizados
 
 
 def atualizar_base_mensal(
@@ -74,6 +169,7 @@ def atualizar_base_mensal(
     pasta_local: str,
     col_data: str = None,
     log_fn=print,
+    cache_hash: bool = False,
 ) -> list[Path]:
     """
     Divide df por mês (usando col_data) e mantém arquivos mensais
@@ -98,13 +194,46 @@ def atualizar_base_mensal(
 
     chave = CHAVE_UPSERT.get(relatorio)
     modificados = []
+    if cache_hash:
+        _CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
     for mes, grupo in df_valido.groupby("_ano_mes"):
         grupo = grupo.drop(columns=["_data_parsed", "_ano_mes"], errors="ignore")
         caminho = base_dir / f"{mes}.xlsx"
+        hash_novo = _hash_grupo(grupo, chave) if cache_hash else ""
+        sidecar = _CACHE_DIR / f"{relatorio}_{mes}.json"
+
+        if cache_hash:
+            # Migração: remove JSON antigo que ficava ao lado do XLSX.
+            legacy = caminho.with_suffix(".json")
+            if legacy.exists():
+                try:
+                    legacy.unlink()
+                except OSError:
+                    pass
+
+        if cache_hash and caminho.exists() and sidecar.exists():
+            try:
+                meta = json.loads(sidecar.read_text(encoding="utf-8"))
+                if meta.get("hash") == hash_novo:
+                    log_fn(
+                        f"  ⏭️  [{relatorio}] {mes}: sem alterações "
+                        f"({meta.get('total', '?')} linhas) — XLSX não reescrito"
+                    )
+                    continue
+            except Exception:
+                pass
 
         total, adicionados, atualizados = _upsert_mes(caminho, grupo, chave, log_fn)
         modificados.append(caminho)
+        if cache_hash:
+            try:
+                sidecar.write_text(
+                    json.dumps({"hash": hash_novo, "total": total}),
+                    encoding="utf-8",
+                )
+            except Exception:
+                pass
         if atualizados > 0:
             log_fn(f"  🔄 [{relatorio}] {mes}: {total} linhas ({adicionados} novos, {atualizados} atualizados)")
         else:

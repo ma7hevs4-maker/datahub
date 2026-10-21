@@ -1,5 +1,8 @@
 import json
 import os
+# Proxy corporativo com certificado self-signed: permite ao webdriver-manager
+# baixar/validar o ChromeDriver sem falhar na verificação SSL.
+os.environ.setdefault("WDM_SSL_VERIFY", "0")
 import threading
 import time
 import unicodedata
@@ -7,7 +10,8 @@ import urllib3
 import calendar
 from datetime import datetime, timedelta
 from pathlib import Path
-from urllib.parse import urlparse
+from typing import Any
+from urllib.parse import urlparse, quote
 
 import pandas as pd
 import requests
@@ -23,10 +27,24 @@ from webdriver_manager.chrome import ChromeDriverManager
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 from config import SpotfireConfig
+from core.base_mensal import atualizar_base_mensal
+from core.processors.scanner import tratar_m300
 
 NOME_SCANNER = "scanner_tabela_completa.xlsx"
 NOME_DESLOCAMENTOS = "scanner_deslocamentos.xlsx"
+NOME_M300_HOJE = "m300_deslocamentos_hoje.csv"
+NOME_M300_GERAL = "m300_deslocamentos_geral.csv"
 TIMEOUT_DOWNLOAD = 300
+TIMEOUT_DOWNLOAD_GERAL = 1800
+_SUFIXOS_EXPORT = {".csv", ".xlsx", ".xls", ".zip", ""}
+
+# Análise de Produtividade (dia atual). A do Scanner/geral vem da config.
+_NOME_ANALISE_PRODUTIVIDADE = "/M300/Produtividade UO TR - RJ"
+
+# Fallback: id do filtro "Período" na análise de Produtividade. Só é usado
+# se o filtro não for encontrado pelo título (o id pode mudar se a análise
+# for editada no Spotfire).
+_PERIODO_FILTRO_ID = "1be0f48b-fe8f-4d13-bf4e-5bd4341d3870"
 
 # Arquivo onde os cookies de sessão do Spotfire são salvos entre execuções
 _COOKIES_FILE = os.path.join(
@@ -108,8 +126,20 @@ def _criar_driver(pasta_download: str) -> uc.Chrome:
             },
         },
     })
+    try:
+        driver_path = ChromeDriverManager().install()
+    except Exception:
+        # Fallback: usa o ChromeDriver já em cache (funciona offline/atrás de proxy).
+        candidatos = sorted(
+            Path.home().glob(
+                ".wdm/drivers/chromedriver/win64/*/chromedriver-win32/chromedriver.exe"
+            )
+        )
+        if not candidatos:
+            raise
+        driver_path = str(candidatos[-1])
     driver = uc.Chrome(
-        driver_executable_path=ChromeDriverManager().install(),
+        driver_executable_path=driver_path,
         options=opts,
     )
     driver.execute_cdp_cmd("Browser.setDownloadBehavior", {
@@ -238,13 +268,184 @@ def _login_http(url: str, username: str, password: str, log_fn=print) -> tuple[d
         return {}, False
 
 
+def _preencher_login_spotfire(driver: uc.Chrome, username: str, password: str,
+                              log_fn=print) -> bool:
+    """Preenche usuário/senha na tela de login do Spotfire e clica em Log in.
+
+    Usa seletores tolerantes (name/id/placeholder/aria-label) porque a tela
+    pode variar entre versões do Spotfire/SSO. Retorna True quando conseguiu
+    preencher e clicar; a confirmação do login é feita por quem chama.
+    """
+    def _achar(seletores, timeout=20):
+        fim = time.time() + timeout
+        while time.time() < fim:
+            for sel in seletores:
+                try:
+                    for el in driver.find_elements(*sel):
+                        try:
+                            if el.is_displayed() and el.is_enabled():
+                                return el
+                        except Exception:
+                            pass
+                except Exception:
+                    pass
+            time.sleep(0.5)
+        return None
+
+    user_sels = [
+        (By.NAME, "j_username"),
+        (By.NAME, "username"),
+        (By.XPATH,
+         "//input[contains(translate(@name,'ABCDEFGHIJKLMNOPQRSTUVWXYZ',"
+         "'abcdefghijklmnopqrstuvwxyz'),'user') "
+         "or contains(translate(@id,'ABCDEFGHIJKLMNOPQRSTUVWXYZ',"
+         "'abcdefghijklmnopqrstuvwxyz'),'user') "
+         "or contains(translate(@placeholder,'ABCDEFGHIJKLMNOPQRSTUVWXYZ',"
+         "'abcdefghijklmnopqrstuvwxyz'),'user') "
+         "or contains(translate(@aria-label,'ABCDEFGHIJKLMNOPQRSTUVWXYZ',"
+         "'abcdefghijklmnopqrstuvwxyz'),'user')]"),
+        (By.XPATH,
+         "//label[contains(translate(normalize-space(.),"
+         "'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'user')]"
+         "//input | //label[contains(translate(normalize-space(.),"
+         "'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'user')]"
+         "/following::input[1]"),
+        (By.CSS_SELECTOR, "input[type='email']"),
+        (By.CSS_SELECTOR, "input[type='text']"),
+    ]
+    pass_sels = [
+        (By.NAME, "j_password"),
+        (By.CSS_SELECTOR, "input[type='password']"),
+        (By.XPATH,
+         "//input[contains(translate(@name,'ABCDEFGHIJKLMNOPQRSTUVWXYZ',"
+         "'abcdefghijklmnopqrstuvwxyz'),'pass')]"),
+        (By.XPATH,
+         "//label[contains(translate(normalize-space(.),"
+         "'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'pass')]"
+         "//input | //label[contains(translate(normalize-space(.),"
+         "'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'pass')]"
+         "/following::input[1]"),
+    ]
+    btn_sels = [
+        (By.XPATH,
+         "//*[self::button or self::a or self::input or @role='button']"
+         "[contains(translate(normalize-space(.),"
+         "'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'log in') "
+         "or contains(translate(normalize-space(.),"
+         "'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'login') "
+         "or contains(translate(normalize-space(.),"
+         "'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'entrar') "
+         "or contains(translate(normalize-space(.),"
+         "'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'sign in') "
+         "or contains(translate(@value,"
+         "'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'log in') "
+         "or contains(translate(@value,"
+         "'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'login')]"),
+        (By.CSS_SELECTOR, "input[type='submit']"),
+        (By.CSS_SELECTOR, "button[type='submit']"),
+    ]
+
+    campo_user = _achar(user_sels, timeout=20)
+    if campo_user is None:
+        log_fn("  ⚠️  Campo de usuário não encontrado na tela de login.")
+        return False
+    try:
+        log_fn(
+            "  🔎 Campo usuário: "
+            f"<{campo_user.tag_name} name='{campo_user.get_attribute('name')}' "
+            f"id='{campo_user.get_attribute('id')}'>"
+        )
+    except Exception:
+        pass
+
+    campo_pass = _achar(pass_sels, timeout=10)
+    if campo_pass is None:
+        log_fn("  ⚠️  Campo de senha não encontrado na tela de login.")
+        return False
+    try:
+        log_fn(
+            "  🔎 Campo senha: "
+            f"<{campo_pass.tag_name} name='{campo_pass.get_attribute('name')}' "
+            f"id='{campo_pass.get_attribute('id')}'>"
+        )
+    except Exception:
+        pass
+
+    def _preencher(el, valor):
+        try:
+            el.click()
+        except Exception:
+            pass
+        try:
+            el.clear()
+        except Exception:
+            pass
+        try:
+            el.send_keys(valor)
+        except Exception:
+            pass
+        # Fallback para inputs controlados por React/Angular.
+        try:
+            atual = el.get_attribute("value") or ""
+            if atual != valor:
+                driver.execute_script(
+                    "arguments[0].value=arguments[1];"
+                    "arguments[0].dispatchEvent(new Event('input',{bubbles:true}));"
+                    "arguments[0].dispatchEvent(new Event('change',{bubbles:true}));",
+                    el, valor,
+                )
+        except Exception:
+            pass
+
+    log_fn("  🔐 Preenchendo usuário e senha...")
+    _preencher(campo_user, username)
+    _preencher(campo_pass, password)
+    time.sleep(0.3)
+
+    botao = _achar(btn_sels, timeout=5)
+    if botao is not None:
+        try:
+            log_fn(
+                "  🔎 Botão: "
+                f"<{botao.tag_name} text='{(botao.text or '')[:30]}' "
+                f"value='{botao.get_attribute('value')}'>"
+            )
+        except Exception:
+            pass
+        try:
+            ActionChains(driver).move_to_element(botao).click().perform()
+        except Exception:
+            try:
+                botao.click()
+            except Exception:
+                try:
+                    driver.execute_script("arguments[0].click();", botao)
+                except Exception:
+                    pass
+        log_fn("  🔐 Botão de login clicado.")
+    else:
+        # Fallback: submit do formulário; se não houver form, Enter na senha.
+        try:
+            driver.execute_script("arguments[0].form.submit();", campo_pass)
+            log_fn("  🔐 Formulário de login enviado (fallback).")
+        except Exception:
+            try:
+                campo_pass.send_keys(Keys.ENTER)
+                log_fn("  🔐 Enter enviado no campo de senha.")
+            except Exception:
+                log_fn("  ⚠️  Botão de login não encontrado.")
+    return True
+
+
 def _fazer_login(driver: uc.Chrome, url: str, username: str, password: str,
                  log_fn=print) -> None:
+    t0 = time.time()
     # Normaliza URL — garante que tem esquema http(s)://
     if not url.startswith(("http://", "https://")):
         url = "http://" + url
     parsed = urlparse(url)
-    login_url = f"{parsed.scheme}://{parsed.netloc}/spotfire/login.html"
+    base = f"{parsed.scheme}://{parsed.netloc}"
+    login_url = f"{base}/spotfire/login.html"
     hostname  = parsed.hostname or ""
 
     def _logado(d: uc.Chrome) -> bool:
@@ -257,7 +458,33 @@ def _fazer_login(driver: uc.Chrome, url: str, username: str, password: str,
     time.sleep(1)
 
     if _restaurar_sessao(driver, url, log_fn):
+        log_fn(f"  ⏱️ Login (sessão salva): {time.time() - t0:.1f}s")
         return
+
+    # ── Tenta login HTTP direto (mais rápido que a tela) ─────────────────────
+    if username and password:
+        log_fn("  🔐 Tentando login HTTP direto...")
+        cookies, ok = _login_http(url, username, password, log_fn)
+        if ok and cookies:
+            try:
+                driver.get(base + "/")
+                for nome, valor in cookies.items():
+                    try:
+                        driver.add_cookie({"name": nome, "value": valor})
+                    except Exception:
+                        pass
+                driver.get(url)
+                if _logado(driver):
+                    log_fn(
+                        f"  ✅ Login HTTP concluído — {driver.current_url} "
+                        f"({time.time() - t0:.1f}s)"
+                    )
+                    _salvar_sessao(driver, log_fn)
+                    return
+            except Exception as e:
+                log_fn(f"  ⚠️  Injeção dos cookies falhou: {e}")
+        else:
+            log_fn("  ⚠️  Login HTTP não confirmou; tentando pela tela.")
 
     # ── Sessão expirada/inexistente: abre tela de login ───────────────────────
     log_fn("  🌐 Abrindo tela de login do Spotfire...")
@@ -277,7 +504,26 @@ def _fazer_login(driver: uc.Chrome, url: str, username: str, password: str,
     if _logado(driver):
         log_fn("  ✅ Sessão Windows ativa — já no dashboard.")
         _salvar_sessao(driver, log_fn)
+        log_fn(f"  ⏱️ Login (SSO): {time.time() - t0:.1f}s")
         return
+
+    # ── Login automático com as credenciais da configuração ──────────────────
+    if username and password:
+        log_fn("  🔐 Tentando login automático...")
+        if _preencher_login_spotfire(driver, username, password, log_fn):
+            try:
+                WebDriverWait(driver, 90).until(_logado)
+            except TimeoutException:
+                pass
+            if _logado(driver):
+                log_fn(f"  ✅ Login automático concluído — {driver.current_url}")
+                _salvar_sessao(driver, log_fn)
+                log_fn(f"  ⏱️ Login (automático): {time.time() - t0:.1f}s")
+                time.sleep(3)
+                return
+            log_fn("  ⚠️  Login automático não confirmado; aguardando login manual.")
+        else:
+            log_fn("  ⚠️  Tela de login não reconhecida; aguardando login manual.")
 
     # ── Aguarda login manual ──────────────────────────────────────────────────
     try:
@@ -291,6 +537,7 @@ def _fazer_login(driver: uc.Chrome, url: str, username: str, password: str,
         WebDriverWait(driver, 300).until(_logado)
         log_fn(f"  ✅ Login detectado — {driver.current_url}")
         _salvar_sessao(driver, log_fn)
+        log_fn(f"  ⏱️ Login (manual): {time.time() - t0:.1f}s")
     except TimeoutException:
         raise TimeoutError("Login no Spotfire não concluído em 5 minutos.")
 
@@ -622,9 +869,12 @@ def _achar_visualizacao(driver: uc.Chrome, titulo_el) -> Any:
             function cls(x){return (x&&x.className||'').toString().toLowerCase();}
             while(e && e!==document.body){
                 var c=cls(e);
-                if(c.indexOf('visual')>=0||c.indexOf('viz')>=0||c.indexOf('sfc-visual')>=0
-                   ||c.indexOf('chart')>=0||c.indexOf('grid')>=0||c.indexOf('table')>=0
-                   ||c.indexOf('sfc')>=0) return e;
+                // O título também tem 'visual' na classe; precisa subir para o
+                // container real da visualização (sf-element-visual/sfc-table).
+                if(c.indexOf('visual-title')>=0){ e=e.parentElement; continue; }
+                if(c.indexOf('sf-element-visual')>=0||c.indexOf('sfc-table')>=0
+                   ||c.indexOf('sfc-graphical-table')>=0||c.indexOf('chart')>=0
+                   ||c.indexOf('grid')>=0||c.indexOf('table')>=0) return e;
                 e=e.parentElement;
             }
             return null;""",
@@ -634,12 +884,110 @@ def _achar_visualizacao(driver: uc.Chrome, titulo_el) -> Any:
         return None
 
 
+def _substituir_com_retry(origem: Path, destino: Path, log_fn=print,
+                          tentativas: int = 60, espera: float = 2.0) -> None:
+    """Move o arquivo baixado para o destino com retry (Excel/OneDrive/Chrome podem travar)."""
+    origem = Path(origem)
+    destino = Path(destino)
+    for i in range(tentativas):
+        try:
+            os.replace(str(origem), str(destino))
+            return
+        except (PermissionError, OSError) as e:
+            if i == tentativas - 1:
+                raise RuntimeError(
+                    f"Não foi possível substituir '{destino.name}' "
+                    f"(arquivo aberto em outro programa?): {e}"
+                )
+            if i == 0 or (i + 1) % 10 == 0:
+                log_fn(
+                    f"  ⚠️  Arquivo ainda em uso; aguardando liberar "
+                    f"({i + 1}/{tentativas})..."
+                )
+            time.sleep(espera)
+
+
+def _achar_titulo_visual(driver, texto: str):
+    """Acha o título de uma visualização (ex.: a tabela 'Deslocamentos').
+
+    O Spotfire renderiza o título como div.sf-element-visual-title. O texto
+    pode ter espaços/NBSP, então usamos contains(normalize-space()). Se houver
+    mais de um (páginas ocultas), fica com o visível mais abaixo na tela.
+    """
+    xpath = (
+        "//div[contains(concat(' ',@class,' '),' sf-element-visual-title ')]"
+        f"[contains(normalize-space(),'{texto}')]"
+    )
+    try:
+        els = driver.find_elements(By.XPATH, xpath)
+    except Exception:
+        return None
+    visiveis = []
+    for e in els:
+        try:
+            if e.is_displayed():
+                visiveis.append((e.rect.get("y", 0), e))
+        except Exception:
+            pass
+    if not visiveis:
+        return None
+    return max(visiveis, key=lambda t: t[0])[1]
+
+
+def _item_menu_visivel(driver, texto: str):
+    """Item VISÍVEL de menu de contexto cujo texto é exatamente `texto`."""
+    alvo = texto.strip().lower()
+    ci = (
+        "translate(normalize-space(.),"
+        "'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz')"
+    )
+    for classe in ("contextMenuItem", "contextMenuItemLabel"):
+        xpath = (
+            f"//*[contains(concat(' ',@class,' '),' {classe} ') "
+            f"and {ci}='{alvo}']"
+        )
+        visiveis = []
+        try:
+            for e in driver.find_elements(By.XPATH, xpath):
+                try:
+                    if e.is_displayed():
+                        visiveis.append(e)
+                except Exception:
+                    pass
+        except Exception:
+            pass
+        if visiveis:
+            return visiveis[-1]
+    return None
+
+
+def _esperar_item_menu(driver, texto: str, timeout: float = 10.0):
+    """Espera o item de menu aparecer, tentando o frame atual e o principal."""
+    fim = time.time() + timeout
+    while time.time() < fim:
+        item = _item_menu_visivel(driver, texto)
+        if item is not None:
+            return item
+        try:
+            driver.switch_to.default_content()
+            item = _item_menu_visivel(driver, texto)
+            if item is not None:
+                return item
+        except Exception:
+            pass
+        time.sleep(0.3)
+    return None
+
+
 def _exportar_tabela(
     driver: uc.Chrome,
     texto_titulo: str,
     pasta_download: str,
     nome_final: str,
     log_fn=print,
+    timeout_download: int = TIMEOUT_DOWNLOAD,
+    estabilidade: float = 2.0,
+    seletor_alvo: str | None = None,
 ) -> Path:
     log_fn(f"  📤 Exportando '{texto_titulo}'...")
     # Captura snapshot da pasta ANTES de qualquer ação — evita race condition
@@ -647,52 +995,97 @@ def _exportar_tabela(
     antes_download = set(Path(pasta_download).iterdir())
     driver.switch_to.default_content()
 
-    try:
-        driver.save_screenshot(str(Path(pasta_download) / f"debug_pre_{nome_final}.png"))
-        log_fn(f"  📸 debug_pre_{nome_final}.png")
-    except Exception:
-        pass
-
     alvo = None
+
+    # ── Estratégia 0: seletor CSS direto (ex.: #id46 da página de hoje) ───────
+    if seletor_alvo:
+        try:
+            alvo = driver.find_element(By.CSS_SELECTOR, seletor_alvo)
+            driver.execute_script(
+                "arguments[0].scrollIntoView({block:'center'});", alvo
+            )
+            time.sleep(1)
+            log_fn(f"  ✅ Alvo por seletor: {seletor_alvo}")
+        except Exception as e:
+            raise RuntimeError(
+                f"Seletor '{seletor_alvo}' não encontrado na página: {e}"
+            )
 
     # ── Estratégia 1: título no DOM principal ─────────────────────────────────
     # Match EXATO: evita achar "Filtro Deslocamentos" quando buscamos "Deslocamentos",
     # ou qualquer outro elemento pai que contenha o texto como substring.
-    try:
-        # Pega o ÚLTIMO elemento com esse texto (ordem de documento = o mais interno /
-        # folha do título), evitando casar o wrapper gigante cujo texto também é o título.
-        # Observação: normalize-space(current()) NÃO existe fora de XSLT no Selenium.
-        titulo_el = WebDriverWait(driver, 20).until(
-            lambda d: _ultimo_match(d, f"//*[normalize-space()='{texto_titulo}']")
-        )
-        log_fn("  ✅ Título no DOM principal (exato).")
-    except TimeoutException:
-        # Fallback: o texto exato pode variar ("todas Colunas" vs "todas as Colunas").
-        base = texto_titulo.replace(" todas as Colunas", "").replace(" todas Colunas", "")
-        titulo_el = WebDriverWait(driver, 20).until(
-            lambda d: _ultimo_match(d, f"//*[contains(normalize-space(), '{base}')]")
-        )
-        log_fn(f"  ✅ Título no DOM principal (contains '{base}').")
+    if alvo is None and texto_titulo == "Deslocamentos":
+        # Caminho específico da tabela de deslocamentos (título de visualização).
+        # Evita o fallback "contains" pegar o filtro "Qtd Deslocamentos".
+        try:
+            titulo_el = WebDriverWait(driver, 60).until(
+                lambda d: _achar_titulo_visual(d, texto_titulo)
+            )
+            log_fn("  ✅ Título da visualização 'Deslocamentos' encontrado.")
+            driver.execute_script(
+                "arguments[0].scrollIntoView({block:'center'});", titulo_el
+            )
+            time.sleep(1)
+            viz = _achar_visualizacao(driver, titulo_el)
+            if viz is None:
+                try:
+                    viz = titulo_el.find_element(By.XPATH, "..")
+                except Exception:
+                    viz = titulo_el
+            alvo = viz
+            try:
+                driver.switch_to.default_content()
+            except Exception:
+                pass
+        except TimeoutException:
+            log_fn("  ⚠️  Título visual 'Deslocamentos' não apareceu; tentando busca genérica.")
 
-    driver.execute_script("arguments[0].scrollIntoView({block:'center'});", titulo_el)
-    time.sleep(1)
-    viz = _achar_visualizacao(driver, titulo_el)
-    if viz is not None:
-        # sobe do título até o container da visualização e clica no centro dele
-        alvo = viz
-    else:
-        # clica 5px ABAIXO da borda inferior do título — dentro do corpo da
-        # visualização, nunca no page-tab (que ficava a +80px)
-        rect = driver.execute_script("return arguments[0].getBoundingClientRect();", titulo_el)
-        cx = rect["left"] + rect["width"] / 2
-        cy = rect["bottom"] + 5
-        alvo = driver.execute_script(
-            "return document.elementFromPoint(arguments[0],arguments[1]);", cx, cy
-        ) or titulo_el
-    try:
-        driver.switch_to.default_content()
-    except Exception:
-        pass
+    if alvo is None:
+        try:
+            # Pega o ÚLTIMO elemento com esse texto (ordem de documento = o mais interno /
+            # folha do título), evitando casar o wrapper gigante cujo texto também é o título.
+            # Observação: normalize-space(current()) NÃO existe fora de XSLT no Selenium.
+            titulo_el = WebDriverWait(driver, 20).until(
+                lambda d: _ultimo_match(
+                    d,
+                    f"//*[normalize-space()='{texto_titulo}' "
+                    "and not(ancestor::*[contains(@class,'sf-element-filter') "
+                    "or contains(@class,'sfc-filter-panel')])]",
+                )
+            )
+            log_fn("  ✅ Título no DOM principal (exato).")
+        except TimeoutException:
+            # Fallback: o texto exato pode variar ("todas Colunas" vs "todas as Colunas").
+            base = texto_titulo.replace(" todas as Colunas", "").replace(" todas Colunas", "")
+            titulo_el = WebDriverWait(driver, 20).until(
+                lambda d: _ultimo_match(
+                    d,
+                    f"//*[contains(normalize-space(), '{base}') "
+                    "and not(ancestor::*[contains(@class,'sf-element-filter') "
+                    "or contains(@class,'sfc-filter-panel')])]",
+                )
+            )
+            log_fn(f"  ✅ Título no DOM principal (contains '{base}').")
+
+        driver.execute_script("arguments[0].scrollIntoView({block:'center'});", titulo_el)
+        time.sleep(1)
+        viz = _achar_visualizacao(driver, titulo_el)
+        if viz is not None:
+            # sobe do título até o container da visualização e clica no centro dele
+            alvo = viz
+        else:
+            # clica 5px ABAIXO da borda inferior do título — dentro do corpo da
+            # visualização, nunca no page-tab (que ficava a +80px)
+            rect = driver.execute_script("return arguments[0].getBoundingClientRect();", titulo_el)
+            cx = rect["left"] + rect["width"] / 2
+            cy = rect["bottom"] + 5
+            alvo = driver.execute_script(
+                "return document.elementFromPoint(arguments[0],arguments[1]);", cx, cy
+            ) or titulo_el
+        try:
+            driver.switch_to.default_content()
+        except Exception:
+            pass
 
     # ── Estratégia 2: busca dentro de cada iframe ─────────────────────────────
     if alvo is None:
@@ -758,46 +1151,49 @@ def _exportar_tabela(
     ActionChains(driver).context_click(alvo).perform()
     time.sleep(2)
 
-    try:
-        driver.save_screenshot(str(Path(pasta_download) / f"debug_menu_{nome_final}.png"))
-        log_fn(f"  📸 debug_menu_{nome_final}.png")
-    except Exception:
-        pass
-
-    # ── Localiza item "Export" — tenta frame atual e depois principal ─────────
-    ci = "translate(normalize-space(.),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz')"
-    xpath_export = f"//*[contains({ci},'export')]"
-    export_item = None
-    for ctx in ("atual", "principal"):
-        if ctx == "principal":
-            try:
-                driver.switch_to.default_content()
-            except Exception:
-                pass
-        try:
-            export_item = WebDriverWait(driver, 8).until(
-                EC.element_to_be_clickable((By.XPATH, xpath_export))
-            )
-            log_fn(f"  ✅ 'Export' encontrado (frame {ctx}).")
-            break
-        except TimeoutException:
-            pass
-
+    # ── Menu de contexto: Export → Export table (itens VISÍVEIS e exatos) ─────
+    # Não usa contains('export') porque isso casava "Export to PDF"/itens
+    # ocultos e acabava clicando em outra coisa (às vezes marcando uma linha).
+    export_item = _esperar_item_menu(driver, "Export", timeout=10)
     if export_item is None:
         raise RuntimeError("Menu 'Export' não apareceu após right-click.")
 
+    log_fn("  ✅ Item 'Export' visível encontrado.")
     ActionChains(driver).move_to_element(export_item).perform()
-    time.sleep(1)
+    time.sleep(1.2)
 
-    export_table = WebDriverWait(driver, 15).until(EC.element_to_be_clickable(
-        (By.XPATH, f"//*[contains({ci},'export') and (contains({ci},'table') or contains({ci},'tabela'))]")
-    ))
-    export_table.click()
+    export_table = _esperar_item_menu(driver, "Export table", timeout=12)
+    if export_table is None:
+        # Fallback: "Export table (without value formatting)".
+        export_table = _esperar_item_menu(
+            driver, "Export table (without value formatting)", timeout=5
+        )
+    if export_table is None:
+        try:
+            driver.find_element(By.TAG_NAME, "body").send_keys(Keys.ESCAPE)
+        except Exception:
+            pass
+        raise RuntimeError("Item 'Export table' não apareceu no submenu.")
+
+    try:
+        log_fn(
+            "  ✅ Clicando em 'Export table' "
+            f"(<{export_table.tag_name} class='{export_table.get_attribute('class')}'>)."
+        )
+    except Exception:
+        pass
+    try:
+        export_table.click()
+    except Exception:
+        driver.execute_script("arguments[0].click();", export_table)
     log_fn(f"  ⏳ Aguardando download de '{texto_titulo}'...")
 
-    arquivo = _aguardar_download(pasta_download, log_fn, antes=antes_download)
+    arquivo = _aguardar_download(
+        pasta_download, log_fn, antes=antes_download,
+        timeout=timeout_download, estabilidade=estabilidade,
+    )
     destino = Path(pasta_download) / nome_final
-    os.replace(str(arquivo), str(destino))
+    _substituir_com_retry(arquivo, destino, log_fn)
     log_fn(f"  ✅ Salvo: {nome_final}")
     try:
         driver.switch_to.default_content()
@@ -807,13 +1203,14 @@ def _exportar_tabela(
 
 
 def _aguardar_download(pasta: str, log_fn=print, timeout: int = TIMEOUT_DOWNLOAD,
-                       antes: set | None = None) -> Path:
+                       antes: set | None = None, estabilidade: float = 2.0) -> Path:
     """Aguarda o download terminar, checando a ESTABILIDADE do tamanho do arquivo.
 
     Resolve o caso de arquivos grandes (ex.: 55 MB): o código anterior
     devolvia o arquivo no primeiro instante em que aparecia, podendo estar
     pela metade. Agora exigimos que o st_size pare de crescer entre duas
-    leituras (~2 s) antes de retornar.
+    leituras (~2 s) antes de retornar. Para a base geral, use uma janela
+    maior (ex.: 5 s), porque a exportação pode ser bem maior.
     """
     pasta_path = Path(pasta)
     if antes is None:
@@ -821,9 +1218,20 @@ def _aguardar_download(pasta: str, log_fn=print, timeout: int = TIMEOUT_DOWNLOAD
     inicio = time.time()
     ultimo: tuple[str, int] | None = None
     while time.time() - inicio < timeout:
-        time.sleep(2)
+        time.sleep(estabilidade)
+        # Enquanto o Chrome estiver escrevendo um .crdownload NOVO, o arquivo
+        # final ainda não está pronto (evita publicar base truncada). Um
+        # .crdownload antigo, de execução anterior, é ignorado.
+        if any(
+            p.suffix == ".crdownload" and p not in antes
+            for p in pasta_path.iterdir()
+        ):
+            continue
         agora = set(pasta_path.iterdir())
-        novos = [f for f in (agora - antes) if f.suffix != ".crdownload"]
+        novos = [
+            f for f in (agora - antes)
+            if f.suffix.lower() in _SUFIXOS_EXPORT
+        ]
         if not novos:
             continue
         f = novos[0]
@@ -835,6 +1243,210 @@ def _aguardar_download(pasta: str, log_fn=print, timeout: int = TIMEOUT_DOWNLOAD
             return f
         ultimo = (f.name, sz)
     raise TimeoutError(f"Download Spotfire não concluído em {timeout}s")
+
+
+def _tipo_export(caminho: Path) -> str:
+    """Detecta o formato real do export pelas magic bytes (não pela extensão)."""
+    try:
+        with open(caminho, "rb") as f:
+            magic = f.read(8)
+        if magic.startswith(b"PK\x03\x04"):
+            return "xlsx"
+        if magic.startswith(b"\xd0\xcf\x11\xe0"):
+            return "xls"
+    except OSError:
+        pass
+    return "csv"
+
+
+def _validar_export(caminho: Path, log_fn=print) -> None:
+    """Confere se o arquivo exportado existe, tem tamanho e tem linhas de dados."""
+    caminho = Path(caminho)
+    if not caminho.exists():
+        raise RuntimeError(f"Arquivo exportado não existe: {caminho}")
+    tamanho = caminho.stat().st_size
+    if tamanho <= 0:
+        raise RuntimeError(f"Arquivo exportado está vazio: {caminho}")
+
+    tipo = _tipo_export(caminho)
+    if tipo in ("xlsx", "xls"):
+        try:
+            xl = pd.ExcelFile(str(caminho))
+            if not xl.sheet_names:
+                raise RuntimeError("planilha sem abas")
+            df = xl.parse(xl.sheet_names[0], nrows=3)
+            if df.empty or len(df.columns) == 0:
+                raise RuntimeError("planilha sem linhas/colunas")
+        except Exception as e:
+            raise RuntimeError(f"Export xlsx inválido ({caminho.name}): {e}")
+        log_fn(f"  OK Export validado: {caminho.name} ({tamanho} bytes, xlsx)")
+        return
+
+    # CSV: escolhe o encoding pelo BOM/cheiro do arquivo (evita decodificar
+    # UTF-8 como UTF-16 e "validar" lixo).
+    try:
+        with open(caminho, "rb") as f:
+            amostra = f.read(200)
+    except OSError:
+        amostra = b""
+    if amostra.startswith((b"\xff\xfe", b"\xfe\xff")):
+        encodings = ("utf-16",)
+    elif amostra.startswith(b"\xef\xbb\xbf"):
+        encodings = ("utf-8-sig",)
+    elif amostra.count(b"\x00") > max(8, len(amostra) // 4):
+        encodings = ("utf-16-le", "utf-16-be")
+    else:
+        encodings = ("utf-8", "latin-1")
+
+    for enc in encodings:
+        try:
+            with open(caminho, "r", encoding=enc, errors="strict") as f:
+                linhas = [f.readline() for _ in range(3)]
+        except UnicodeError:
+            continue
+        if not linhas or not linhas[0].strip():
+            continue
+        primeira = linhas[0].strip().lower()
+        if primeira.startswith("<html") or primeira.startswith("<!doctype"):
+            raise RuntimeError("o export veio como HTML, não como tabela")
+        if not any(l.strip() for l in linhas[1:]):
+            raise RuntimeError("o export não tem linhas de dados")
+        log_fn(
+            f"  OK Export validado: {caminho.name} "
+            f"({tamanho} bytes, csv/{enc})"
+        )
+        return
+    raise RuntimeError(f"Export csv inválido ou vazio: {caminho.name}")
+
+
+def _preparar_pasta_download(pasta_local: str | Path) -> Path:
+    """Pasta exclusiva para downloads do Spotfire, limpa a cada execução.
+
+    Evita que um CSV antigo da pasta Downloads (ou um `(1).csv` de execução
+    anterior) seja confundido com o arquivo novo.
+    """
+    d = Path(pasta_local) / "_datahub_m300_download"
+    d.mkdir(parents=True, exist_ok=True)
+    for f in d.iterdir():
+        if f.is_file():
+            try:
+                f.unlink()
+            except OSError:
+                pass
+    return d
+
+
+def _limpar_pasta_download(pasta: Path) -> None:
+    p = Path(pasta)
+    for f in p.iterdir():
+        if f.is_file():
+            try:
+                f.unlink()
+            except OSError:
+                pass
+    try:
+        p.rmdir()
+    except OSError:
+        pass
+
+
+def _normalizar_export(temp: Path, destino: Path, log_fn=print) -> Path:
+    """Publica o export no nome final.
+
+    Se o Spotfire baixou um xlsx e o destino é .csv, converte para CSV UTF-16
+    (mesmo padrão dos exports do M300). Se já é CSV, move como está.
+    """
+    temp = Path(temp)
+    destino = Path(destino)
+    tipo = _tipo_export(temp)
+
+    if tipo in ("xlsx", "xls") and destino.suffix.lower() == ".csv":
+        log_fn("  Convertendo export xlsx para csv...")
+        tmp_csv = destino.with_suffix(".tmp_csv.csv")
+        try:
+            df = pd.read_excel(str(temp), dtype=str)
+            df.to_csv(str(tmp_csv), sep="\t", index=False, encoding="utf-16")
+            _validar_export(tmp_csv, log_fn)
+            temp.unlink(missing_ok=True)
+            _substituir_com_retry(tmp_csv, destino, log_fn)
+        except Exception:
+            for p in (temp, tmp_csv):
+                try:
+                    p.unlink(missing_ok=True)
+                except OSError:
+                    pass
+            raise
+    else:
+        _validar_export(temp, log_fn)
+        _substituir_com_retry(temp, destino, log_fn)
+
+    return destino
+
+
+def _exportar_com_fallback(
+    driver: uc.Chrome,
+    titulos: list[str],
+    pasta_download: str,
+    nome_final: str,
+    log_fn=print,
+    timeout_download: int = TIMEOUT_DOWNLOAD,
+    estabilidade: float = 2.0,
+) -> Path:
+    """Exporta tentando vários títulos de tabela e publica de forma atômica.
+
+    O download vai para um nome temporário; só depois de validado ele
+    substitui o arquivo final. Assim, uma falha não corrompe o arquivo
+    anterior (importante para o SharePoint).
+    """
+    pasta = Path(pasta_download)
+    destino = pasta / nome_final
+    temp_nome = f".tmp_{nome_final}"
+    temp = pasta / temp_nome
+    if temp.exists():
+        try:
+            temp.unlink()
+        except OSError:
+            pass
+
+    ultimo_erro = None
+    try:
+        for titulo in titulos:
+            try:
+                _exportar_tabela(
+                    driver, titulo, str(pasta), temp_nome, log_fn,
+                    timeout_download=timeout_download,
+                    estabilidade=estabilidade,
+                    seletor_alvo=(titulo if titulo.startswith("#") else None),
+                )
+                return _normalizar_export(temp, destino, log_fn)
+            except Exception as e:
+                ultimo_erro = e
+                log_fn(f"  ⚠️  Export '{titulo}' falhou: {e}")
+                try:
+                    if temp.exists():
+                        temp.unlink()
+                except OSError:
+                    pass
+                try:
+                    driver.switch_to.default_content()
+                except Exception:
+                    pass
+                try:
+                    ActionChains(driver).send_keys(Keys.ESCAPE).perform()
+                except Exception:
+                    pass
+                time.sleep(1)
+    finally:
+        if temp.exists():
+            try:
+                temp.unlink()
+            except OSError:
+                pass
+
+    raise RuntimeError(
+        f"Não foi possível exportar '{nome_final}'. "
+        f"Títulos tentados: {titulos}. Último erro: {ultimo_erro}"
+    )
 
 
 def baixar_scanner(
@@ -937,15 +1549,38 @@ def _url_analise_m300(url_base: str) -> str:
     return f"{url_base.rstrip('/')}/wp/analysis?file={_NOME_ANALISE_M300}"
 
 
-def _garantir_painel_filtros(driver, log_fn=print):
+def _url_produtividade(url_base: str) -> str:
+    """Constrói a URL da análise de Produtividade (dia atual).
+
+    Se `url_hoje` estiver configurada, o chamador usa direto. Esta função
+    serve de fallback: aproveita o host da URL do Scanner e monta a análise
+    de Produtividade com o parâmetro `file=`.
+    """
+    url_base = (url_base or "").strip()
+    if not url_base:
+        raise ValueError("URL do Spotfire não configurada.")
+    if "Produtividade" in url_base:
+        return url_base
+    if not url_base.startswith(("http://", "https://")):
+        url_base = "http://" + url_base
+    parsed = urlparse(url_base)
+    base = f"{parsed.scheme}://{parsed.netloc}"
+    return (
+        f"{base}/spotfire/wp/analysis"
+        f"?file={quote(_NOME_ANALISE_PRODUTIVIDADE)}"
+    )
+
+
+def _garantir_painel_filtros(driver, log_fn=print, timeout: int = 45):
     """Aguarda o painel de filtros (.sfc-filter-panel) carregar; abre se necessário.
 
     O painel carrega de forma assíncrona após trocar de aba, então esperamos até
-    45s antes de qualquer clique. Só tenta o botão toggle (id 'Spotfire.FilterPanel')
-    se o painel realmente não aparecer, e nunca quebra o fluxo por isso.
+    `timeout` segundos antes de qualquer clique. Só tenta o botão toggle (id
+    'Spotfire.FilterPanel') se o painel realmente não aparecer, e nunca quebra
+    o fluxo por isso.
     """
     try:
-        WebDriverWait(driver, 45).until(
+        WebDriverWait(driver, timeout).until(
             lambda d: d.find_elements(By.CSS_SELECTOR, ".sfc-filter-panel")
         )
         return
@@ -1071,6 +1706,213 @@ def _achar_filtro_esquerdo(driver, tipo: str, tentativas: int = 12):
     raise RuntimeError(
         f"Filtro '{tipo}' não encontrado à esquerda. Rótulos vistos: {titulos}. ({ultimo_erro})"
     )
+
+
+def _achar_filtro_por_titulo(driver, titulo: str):
+    """Localiza um filtro pelo título (ex.: 'Período'), com fallback por conteúdo.
+
+    Diferente de `_achar_filtro_esquerdo`, serve para filtros que não fazem
+    parte do conjunto fixo Ano/Mês/Gerência/Atuação/Base.
+    """
+    alvo = _norm(titulo).strip().rstrip(":")
+    for t in driver.find_elements(By.CSS_SELECTOR, ".sf-element-filter-title"):
+        if _norm(t.text or "").strip().rstrip(":") == alvo:
+            try:
+                card = t.find_element(
+                    By.XPATH,
+                    "ancestor::*[contains(concat(' ',@class,' '),'sf-element-filter')][1]",
+                )
+            except Exception:
+                card = t
+            cont = card.find_elements(By.CSS_SELECTOR, "span.sf-element-filter-content")
+            cont = [
+                c for c in cont
+                if "sf-element-filter-title" not in (c.get_attribute("class") or "")
+            ]
+            return cont[0] if cont else card
+    for f in _filtros_esquerda(driver):
+        if alvo in _blob_filtro(f):
+            return f
+    return None
+
+
+def _itens_all_visiveis(filtro):
+    """Itens '(All)' visíveis do filtro (o Spotfire mantém cópias ocultas)."""
+    itens = []
+    try:
+        for it in filtro.find_elements(By.CSS_SELECTOR, "div.sf-element-list-box-item"):
+            titulo = (it.get_attribute("title") or it.text or "").strip()
+            if not titulo.lower().startswith("(all)"):
+                continue
+            try:
+                if it.is_displayed():
+                    itens.append(it)
+            except Exception:
+                pass
+    except Exception:
+        pass
+    return itens
+
+
+def _selecionar_all_visivel(driver, filtro, log_fn=print) -> bool:
+    """Seleciona o '(All)' VISÍVEL do filtro. Retorna True se já estava/ficou ok."""
+    # Expande se a lista ainda não estiver renderizada.
+    if not filtro.find_elements(By.CSS_SELECTOR, "div.sf-element-list-box-item"):
+        try:
+            filtro.click()
+        except Exception:
+            try:
+                driver.execute_script("arguments[0].click();", filtro)
+            except Exception:
+                pass
+        time.sleep(0.6)
+
+    for it in _itens_all_visiveis(filtro):
+        try:
+            if _item_selecionado(it):
+                log_fn("  ✓ Período já está em (All) — nada a fazer.")
+                return True
+            driver.execute_script(
+                "arguments[0].scrollIntoView({block:'center'});", it
+            )
+            time.sleep(0.2)
+            ActionChains(driver).move_to_element(it).click().perform()
+            time.sleep(0.5)
+            if _item_selecionado(it):
+                log_fn("  ✓ Período = (All) confirmado.")
+            return True
+        except Exception:
+            continue
+
+    # Fallback para DOM sem a classe de list-box: procura o texto visível
+    # "(All) N values" dentro do próprio filtro.
+    try:
+        candidatos = filtro.find_elements(
+            By.XPATH, ".//*[starts-with(normalize-space(),'(All)')]"
+        )
+        for it in candidatos:
+            try:
+                if not it.is_displayed():
+                    continue
+                driver.execute_script(
+                    "arguments[0].scrollIntoView({block:'center'});", it
+                )
+                time.sleep(0.2)
+                ActionChains(driver).move_to_element(it).click().perform()
+                time.sleep(0.5)
+                log_fn("  ✓ Período = (All) clicado (fallback por texto).")
+                return True
+            except Exception:
+                continue
+    except Exception:
+        pass
+    return False
+
+
+def _revelar_filtro_painel(driver, termo: str = "per", log_fn=print) -> bool:
+    """Digita no campo 'Type to search filters' para revelar o filtro desejado.
+
+    Algumas análises só renderizam o card do filtro depois da busca no painel.
+    É o mesmo passo que o Codegen do Playwright registrou.
+    """
+    xpath_input = (
+        "//input[contains(translate(@placeholder,"
+        "'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'search filters') "
+        "or contains(translate(@aria-label,"
+        "'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'search filters')]"
+    )
+    try:
+        campo = WebDriverWait(driver, 10).until(
+            EC.presence_of_element_located((By.XPATH, xpath_input))
+        )
+        campo.clear()
+        campo.send_keys(termo)
+        time.sleep(0.7)
+    except Exception:
+        return False
+
+    for seletor in (".FilterPanelMagnifier > svg", ".FilterPanelMagnifier"):
+        try:
+            driver.find_element(By.CSS_SELECTOR, seletor).click()
+            time.sleep(0.7)
+            break
+        except Exception:
+            try:
+                driver.execute_script(
+                    "arguments[0].click();",
+                    driver.find_element(By.CSS_SELECTOR, seletor),
+                )
+                time.sleep(0.7)
+                break
+            except Exception:
+                continue
+    log_fn(f"  ℹ️  Busca de filtros aplicada ('{termo}').")
+    return True
+
+
+def _aplicar_filtro_periodo(driver, log_fn=print):
+    """Aplica Período = (All) na análise de Produtividade (dia atual).
+
+    Tenta primeiro o filtro pelo título; se não achar, usa o id conhecido
+    como fallback (o id pode mudar se a análise for editada no Spotfire).
+    Prioriza o item '(All)' VISÍVEL, porque o Spotfire mantém cópias ocultas.
+    """
+    _garantir_painel_filtros(driver, log_fn)
+
+    filtro = _achar_filtro_por_titulo(driver, "Período")
+    if filtro is None:
+        # Em algumas análises o card só é renderizado após a busca do painel.
+        if _revelar_filtro_painel(driver, "per", log_fn):
+            filtro = _achar_filtro_por_titulo(driver, "Período")
+    if filtro is None:
+        try:
+            filtro = driver.find_element(
+                By.CSS_SELECTOR, f'[id="{_PERIODO_FILTRO_ID}"]'
+            )
+            log_fn("  ℹ️  Filtro 'Período' localizado pelo id de fallback.")
+        except Exception:
+            filtro = None
+
+    if filtro is None:
+        vistos = []
+        try:
+            vistos = [
+                (t.text or "").strip()
+                for t in driver.find_elements(
+                    By.CSS_SELECTOR, ".sf-element-filter-title"
+                )
+            ]
+        except Exception:
+            pass
+        raise RuntimeError(
+            "Filtro 'Período' não encontrado na análise de Produtividade. "
+            f"Rótulos vistos: {vistos}. "
+            "Verifique se a análise foi alterada no Spotfire."
+        )
+
+    if _selecionar_all_visivel(driver, filtro, log_fn):
+        return
+
+    # Fallback para a lógica genérica de list-box (inclui rolagem virtual).
+    try:
+        if _filtro_tem_selecionado(filtro, "(All)"):
+            log_fn("  ✓ Período já está em (All) — nada a fazer.")
+            return
+    except Exception:
+        pass
+
+    _clicar_item_filtro(driver, filtro, "(All)", log_fn)
+    time.sleep(1)
+    try:
+        ok = _filtro_tem_selecionado(filtro, "(All)")
+    except Exception:
+        ok = False
+    if ok:
+        log_fn("  ✓ Período = (All) confirmado.")
+    else:
+        # Não falha: a classe de seleção do Spotfire pode variar; o download
+        # ainda é validado depois (arquivo com dados).
+        log_fn("  ⚠️  Período = (All) não confirmado pela classe; seguindo.")
 
 
 def _aguardar_filtros(driver, log_fn=print, timeout: int = 40):
@@ -1357,6 +2199,145 @@ def _rolar_ate_achar(driver, filtro_el, valor: str, max_passos: int = 80):
     return _achar_item_na_lista(filtro_el, valor)
 
 
+def _abrir_menu_view(driver, log_fn=print) -> bool:
+    """Abre o menu View do Spotfire (onde ficam os comandos de reset)."""
+    for sel in ((By.XPATH, "//*[@title='View']"),
+                (By.XPATH, "//*[normalize-space()='View']")):
+        try:
+            el = driver.find_element(*sel)
+            try:
+                el.click()
+            except Exception:
+                driver.execute_script("arguments[0].click();", el)
+            time.sleep(0.8)
+            return True
+        except Exception:
+            continue
+    return False
+
+
+def _resetar_spotfire(driver, log_fn=print) -> int:
+    """Reseta TODOS os filtros e TODAS as marcações pelo menu View.
+
+    Usa os comandos nativos do Spotfire:
+      - Reset all markings  (limpa o '1 marked' que filtra a tabela de cima)
+      - Reset all filters   (zera os filtros, inclusive Equipe)
+      - Reset visible filters
+    Não clica em itens de filtro, não rola listas e não seleciona nada.
+    """
+    comandos = (
+        "Spotfire.ResetAllMarkings",
+        "Spotfire.ResetAllFilters",
+        "Spotfire.ResetVisibleFilters",
+    )
+    clicados = 0
+
+    def _comando_visivel(cmd):
+        try:
+            return driver.find_element(
+                By.CSS_SELECTOR, f"[id='{cmd}']"
+            ).is_displayed()
+        except Exception:
+            return False
+
+    for cmd in comandos:
+        if not _comando_visivel(cmd):
+            if not _abrir_menu_view(driver, log_fn):
+                break
+        try:
+            el = driver.find_element(By.CSS_SELECTOR, f"[id='{cmd}']")
+            try:
+                el.click()
+            except Exception:
+                driver.execute_script("arguments[0].click();", el)
+            clicados += 1
+            log_fn(f"  ✓ {cmd}")
+            time.sleep(1)
+        except Exception as e:
+            log_fn(f"  ⚠️  Comando '{cmd}' não encontrado: {e}")
+            try:
+                driver.find_element(By.TAG_NAME, "body").send_keys(Keys.ESCAPE)
+            except Exception:
+                pass
+
+    try:
+        driver.find_element(By.TAG_NAME, "body").send_keys(Keys.ESCAPE)
+    except Exception:
+        pass
+
+    if clicados == 0:
+        # Fallback: botão visível do painel de filtros.
+        try:
+            btn = driver.find_element(By.CSS_SELECTOR, "#id83, .ResetButton")
+            btn.click()
+            clicados = 1
+            log_fn("  ✓ Reset Visible Filters (fallback).")
+        except Exception:
+            log_fn("  ⚠️  Não foi possível resetar filtros/marcações; seguindo.")
+    else:
+        log_fn(
+            f"  ✓ Reset Spotfire: {clicados} comando(s) executado(s) "
+            "(filtros e marcações)."
+        )
+    return clicados
+
+
+def _resetar_filtros_visiveis(driver, log_fn=print) -> int:
+    """Clica nos botões de reset do painel e não seleciona mais nada.
+
+    É o fluxo pedido: abrir a página, resetar TODOS os filtros para (All) e
+    exportar. Usa clique via JS para não rolar a página nem interagir com
+    itens de lista (o que estava fazendo o robô se perder nos filtros).
+    """
+    candidatos = []
+    try:
+        candidatos = driver.find_elements(By.CSS_SELECTOR, ".ResetFilters")
+    except Exception:
+        pass
+
+    if not candidatos:
+        # Fallback: ícones de reset/limpar dentro do painel de filtros.
+        try:
+            paineis = driver.find_elements(By.CSS_SELECTOR, ".sfc-filter-panel")
+            escopo = paineis[0] if paineis else driver
+            xpath = (
+                "//*[contains(translate(@title,'ABCDEFGHIJKLMNOPQRSTUVWXYZ',"
+                "'abcdefghijklmnopqrstuvwxyz'),'reset') "
+                "or contains(translate(@aria-label,"
+                "'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'reset') "
+                "or contains(translate(@title,"
+                "'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'limpar') "
+                "or contains(translate(@aria-label,"
+                "'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'limpar')]"
+            )
+            candidatos = escopo.find_elements(By.XPATH, xpath)
+        except Exception:
+            candidatos = []
+
+    clicados = 0
+    vistos = set()
+    for b in candidatos:
+        try:
+            chave = getattr(b, "id", id(b))
+            if chave in vistos:
+                continue
+            vistos.add(chave)
+            try:
+                b.click()
+            except Exception:
+                driver.execute_script("arguments[0].click();", b)
+            clicados += 1
+            time.sleep(0.3)
+        except Exception:
+            continue
+
+    if clicados:
+        log_fn(f"  ✓ reset de filtros: {clicados} botão(ões) clicado(s) (sem selecionar itens).")
+    else:
+        log_fn("  ⚠️  Nenhum botão de reset encontrado; exportando a visão atual.")
+    return clicados
+
+
 def _resetar_filtros_m300(driver, log_fn=print):
     """Restaura todos os filtros para (All).
 
@@ -1408,6 +2389,70 @@ def _aplicar_filtro_polo(driver, polo: str, log_fn=print):
         _clicar_item_filtro(driver, _achar_filtro_esquerdo(driver, "base"), bases[0], log_fn)
         for base in bases[1:]:
             _clicar_item_filtro(driver, _achar_filtro_esquerdo(driver, "base"), base, log_fn, ctrl=True)
+
+
+def _janela_meses(meses: int = 2, hoje: datetime | None = None) -> list[tuple[int, int]]:
+    """Lista [(ano, mês)] do mês atual e dos anteriores (padrão: 2 meses).
+
+    Em janeiro, devolve [(2027, 1), (2026, 12)] — cobre a virada do ano.
+    """
+    hoje = hoje or datetime.now()
+    cur = hoje.replace(day=1)
+    alvos: list[tuple[int, int]] = []
+    for _ in range(max(1, int(meses))):
+        alvos.append((cur.year, cur.month))
+        cur = (cur - timedelta(days=1)).replace(day=1)
+    return alvos
+
+
+def _clicar_filtro_com_retry(driver, tipo: str, valor: str, log_fn=print,
+                             ctrl: bool = False, tentativas: int = 4) -> None:
+    """Re-localiza o filtro e tenta de novo quando o Spotfire re-renderiza."""
+    ultimo = None
+    for i in range(tentativas):
+        try:
+            filtro = _achar_filtro_esquerdo(driver, tipo)
+            _clicar_item_filtro(driver, filtro, valor, log_fn, ctrl=ctrl)
+            return
+        except (StaleElementReferenceException, RuntimeError) as e:
+            ultimo = e
+            log_fn(
+                f"    ⚠️  Filtro '{tipo}' re-renderizou/instável; "
+                f"tentando de novo ({i + 1}/{tentativas})..."
+            )
+            time.sleep(1.2)
+    raise ultimo or RuntimeError(f"Filtro '{tipo}' não pôde ser selecionado.")
+
+
+def _selecionar_janela_filtros(driver, alvos: list[tuple[int, int]],
+                               log_fn=print) -> None:
+    """Seleciona Ano/Mês no Spotfire para a janela informada.
+
+    Deve ser chamado DEPOIS do reset total. Seleciona o mês atual e o anterior
+    juntos (ctrl+click). Em janeiro, seleciona também o ano anterior.
+    """
+    anos = sorted({y for y, _ in alvos})
+    meses: list[int] = []
+    for _, m in alvos:
+        if m not in meses:
+            meses.append(m)
+
+    for i, ano in enumerate(anos):
+        _clicar_filtro_com_retry(
+            driver, "ano", str(ano), log_fn, ctrl=(i > 0)
+        )
+        time.sleep(1)
+
+    for i, mes in enumerate(meses):
+        _clicar_filtro_com_retry(
+            driver, "mês", _MESES_PT[mes], log_fn, ctrl=(i > 0)
+        )
+        time.sleep(1)
+
+    log_fn(
+        "  ✓ Janela selecionada: "
+        + " + ".join(f"{_MESES_PT[m]}/{y}" for y, m in alvos)
+    )
 
 
 def _segmentar_por_mes(data_ini: datetime, data_fim: datetime) -> list[tuple[datetime, datetime, str]]:
@@ -1700,3 +2745,429 @@ def _abrir_analise(driver, url: str, log_fn=print):
         )
     )
     _aguardar_carregamento(driver)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# M300 — deslocamentos (arquivos para o SharePoint)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _norm_coluna(nome) -> str:
+    return "".join(
+        c for c in unicodedata.normalize("NFKD", str(nome))
+        .encode("ascii", "ignore").decode().lower()
+        if c.isalnum()
+    )
+
+
+def _merge_painel_desloc(painel_path: Path, desloc_path: Path,
+                         destino: Path, log_fn=print) -> Path:
+    """Acrescenta ao deslocamento de hoje as colunas do Painel Acompanhamento.
+
+    Merge por 'Equipe' (o Painel tem 1 linha por equipe). Colunas adicionadas:
+    Inicio Calendário, Login, Fim calendário, Log Off.
+    """
+    painel = pd.read_csv(str(painel_path), sep="\t", encoding="utf-16", dtype=str)
+    desloc = pd.read_csv(str(desloc_path), sep="\t", encoding="utf-16", dtype=str)
+
+    mapa = {
+        "iniciocalendario": "Inicio Calendário",
+        "login": "Login",
+        "fimcalendario": "Fim calendário",
+        "logoff": "Log Off",
+    }
+    pcols = {_norm_coluna(c): c for c in painel.columns}
+    dcols = {_norm_coluna(c): c for c in desloc.columns}
+
+    p_equipe = pcols.get("equipe")
+    d_equipe = dcols.get("equipe")
+    if not p_equipe or not d_equipe:
+        raise RuntimeError("Coluna 'Equipe' não encontrada no Painel ou no Deslocamentos.")
+
+    painel_sel = pd.DataFrame({
+        "_equipe_key": painel[p_equipe].astype(str).str.strip().str.upper()
+    })
+    for chave_norm, nome_final in mapa.items():
+        origem = pcols.get(chave_norm)
+        if origem is None:
+            log_fn(f"  ⚠️  Painel sem coluna '{nome_final}'; preenchendo vazio.")
+            painel_sel[nome_final] = ""
+        else:
+            painel_sel[nome_final] = (
+                painel[origem].fillna("").astype(str).str.strip()
+            )
+
+    duplicadas = int(painel_sel["_equipe_key"].duplicated().sum())
+    if duplicadas:
+        log_fn(f"  ⚠️  Painel com {duplicadas} equipe(s) duplicada(s); mantendo a última.")
+    painel_sel = painel_sel.drop_duplicates("_equipe_key", keep="last")
+
+    desloc = desloc.copy()
+    desloc["_equipe_key"] = desloc[d_equipe].astype(str).str.strip().str.upper()
+    for nome_final in mapa.values():
+        if nome_final in desloc.columns:
+            desloc = desloc.drop(columns=[nome_final])
+
+    merged = desloc.merge(painel_sel, on="_equipe_key", how="left")
+    merged = merged.drop(columns=["_equipe_key"])
+
+    eq_desloc = set(desloc["_equipe_key"])
+    eq_painel = set(painel_sel["_equipe_key"])
+    casadas = len(eq_desloc & eq_painel)
+    sem = len(eq_desloc - eq_painel)
+    log_fn(
+        f"  ✓ Merge Painel: {len(merged)} linha(s); "
+        f"{casadas} equipe(s) casada(s), {sem} sem correspondência."
+    )
+    if sem:
+        exemplos = sorted(eq_desloc - eq_painel)[:10]
+        log_fn(f"    ℹ️  Sem painel (exemplos): {exemplos}")
+
+    merged.to_csv(str(destino), sep="\t", index=False, encoding="utf-16")
+    _validar_export(destino, log_fn)
+    return destino
+
+
+def _filtrar_janela(df: pd.DataFrame, alvos: list[tuple[int, int]],
+                    log_fn=print, rotulo: str = "") -> pd.DataFrame:
+    if "Data Referência" not in df.columns:
+        raise RuntimeError(f"{rotulo}CSV sem a coluna 'Data Referência'.")
+    dt = pd.to_datetime(df["Data Referência"], dayfirst=True, errors="coerce")
+    alvo_set = set(alvos)
+    dentro = pd.Series(
+        [
+            (int(a), int(m)) in alvo_set
+            for a, m in zip(dt.dt.year.fillna(0), dt.dt.month.fillna(0))
+        ],
+        index=df.index,
+    )
+    descartadas = int((~dentro).sum())
+    out = df[dentro].copy()
+    log_fn(
+        f"  🗓️  {rotulo}linhas na janela: {len(out)} "
+        f"({descartadas} fora da janela descartada(s))."
+    )
+    return out
+
+
+def baixar_bases_scanner_mensais(
+    cfg: "SpotfireConfig",
+    pasta_local: str,
+    log_fn=print,
+    stop_event: threading.Event | None = None,
+    meses: int = 2,
+) -> tuple[list[Path], str | None]:
+    """Baixa a janela de 2 meses do Scanner e faz upsert nas bases mensais.
+
+    Exporta DUAS tabelas:
+      - Deslocamentos        -> bases_mensais/deslocamentos/YYYY-MM.xlsx (cru)
+      - Tabela Completa      -> bases_mensais/tabela_completa/YYYY-MM.xlsx
+        (com as 34 colunas verdes de tratamento do modelo)
+
+    Retorna (lista de arquivos modificados, última data presente na base).
+    """
+    pasta = Path(pasta_local).resolve()
+    pasta.mkdir(parents=True, exist_ok=True)
+    temp_download = _preparar_pasta_download(pasta)
+    alvos = _janela_meses(meses)
+    t_total = time.time()
+    log_fn(
+        "  🗓️  Janela do Scanner: "
+        + " + ".join(f"{m:02d}/{y}" for y, m in alvos)
+    )
+
+    driver = _criar_driver(str(temp_download))
+    if stop_event:
+        threading.Thread(
+            target=_watchdog_driver, args=(driver, stop_event), daemon=True
+        ).start()
+
+    temp_desloc = None
+    temp_tc = None
+    try:
+        url = _url_analise_m300(cfg.url)
+        log_fn("🌐 Spotfire (bases mensais): abrindo análise do Scanner...")
+        t = time.time()
+        _fazer_login(driver, url, cfg.login, cfg.senha, log_fn)
+        log_fn(f"  ⏱️ Login: {time.time() - t:.1f}s")
+        t = time.time()
+        _abrir_analise(driver, url, log_fn)
+        _clicar_aba_tab_completa(driver, log_fn)
+        log_fn(f"  ⏱️ Abertura + Tab Completa: {time.time() - t:.1f}s")
+
+        # Sempre resetar ANTES de filtrar Ano/Mês.
+        log_fn("  🧹 Resetando filtros e marcações pelo menu View...")
+        t = time.time()
+        _resetar_spotfire(driver, log_fn)
+        _aguardar_carregamento(driver)
+        log_fn(f"  ⏱️ Reset filtros/marcações: {time.time() - t:.1f}s")
+
+        log_fn("  🗓️  Selecionando Ano/Mês da janela...")
+        t = time.time()
+        _selecionar_janela_filtros(driver, alvos, log_fn)
+        _aguardar_carregamento(driver)
+        log_fn(f"  ⏱️ Seleção Ano/Mês: {time.time() - t:.1f}s")
+
+        log_fn("  📤 Exportando Deslocamentos (Scanner)...")
+        t = time.time()
+        temp_desloc = _exportar_com_fallback(
+            driver,
+            ["Deslocamentos"],
+            str(temp_download),
+            "_desloc_scanner.csv",
+            log_fn,
+            timeout_download=900,
+            estabilidade=10.0,
+        )
+        log_fn(f"  ⏱️ Export Deslocamentos: {time.time() - t:.1f}s")
+        log_fn("  📤 Exportando Tabela Completa (Scanner)...")
+        t = time.time()
+        temp_tc = _exportar_com_fallback(
+            driver,
+            ["Tabela Completa todas Colunas"],
+            str(temp_download),
+            "_tabela_completa_scanner.csv",
+            log_fn,
+            timeout_download=900,
+            estabilidade=10.0,
+        )
+        log_fn(f"  ⏱️ Export Tabela Completa: {time.time() - t:.1f}s")
+    finally:
+        try:
+            _resetar_spotfire(driver, log_fn)
+        except Exception:
+            pass
+        try:
+            driver.quit()
+        except Exception:
+            pass
+
+    arquivos: list[Path] = []
+
+    # 1) Deslocamentos crus (sem colunas de tratamento).
+    t = time.time()
+    df_desloc = pd.read_csv(
+        str(temp_desloc), sep="\t", encoding="utf-16", dtype=str
+    )
+    df_desloc = _filtrar_janela(
+        df_desloc, alvos, log_fn, "Deslocamentos: "
+    )
+    base_ate = None
+    if not df_desloc.empty:
+        try:
+            dtmax = pd.to_datetime(
+                df_desloc["Data Referência"], dayfirst=True, errors="coerce"
+            ).max()
+            if pd.notna(dtmax):
+                base_ate = dtmax.strftime("%Y-%m-%d")
+        except Exception:
+            pass
+    if df_desloc.empty:
+        log_fn("  ⚠️  Deslocamentos sem linhas na janela.")
+    else:
+        arquivos += atualizar_base_mensal(
+            df_desloc, "deslocamentos", str(pasta), "Data Referência", log_fn,
+            cache_hash=True,
+        )
+    log_fn(f"  ⏱️ Deslocamentos (processamento+upsert): {time.time() - t:.1f}s")
+
+    # 2) Tabela Completa com as 34 colunas verdes de tratamento.
+    t = time.time()
+    df_tc = tratar_m300(temp_tc, log_fn)
+    log_fn(f"  ⏱️ Tratamento Tabela Completa: {time.time() - t:.1f}s")
+    t = time.time()
+    df_tc = _filtrar_janela(
+        df_tc, alvos, log_fn, "Tabela Completa: "
+    )
+    if base_ate is None and not df_tc.empty:
+        try:
+            dtmax = pd.to_datetime(
+                df_tc["Data Referência"], dayfirst=True, errors="coerce"
+            ).max()
+            if pd.notna(dtmax):
+                base_ate = dtmax.strftime("%Y-%m-%d")
+        except Exception:
+            pass
+    if df_tc.empty:
+        log_fn("  ⚠️  Tabela Completa sem linhas na janela.")
+    else:
+        arquivos += atualizar_base_mensal(
+            df_tc, "tabela_completa", str(pasta), "Data Referência", log_fn,
+            cache_hash=True,
+        )
+    log_fn(f"  ⏱️ Tabela Completa (upsert): {time.time() - t:.1f}s")
+
+    _limpar_pasta_download(temp_download)
+    log_fn(f"  ⏱️ Tempo total Scanner: {time.time() - t_total:.1f}s")
+    if arquivos:
+        log_fn(
+            "  ✅ Bases mensais atualizadas: "
+            + ", ".join(f"{p.parent.name}/{p.name}" for p in arquivos)
+        )
+    else:
+        log_fn("  ⚠️  Nenhuma base mensal alterada.")
+    return arquivos, base_ate
+
+
+def baixar_deslocamentos_hoje(
+    cfg: "SpotfireConfig",
+    pasta_local: str,
+    log_fn=print,
+    stop_event: threading.Event | None = None,
+) -> Path:
+    """Baixa a tabela de deslocamentos do DIA ATUAL (análise de Produtividade).
+
+    Salva em `m300_deslocamentos_hoje.csv` (ou converte para CSV se o
+    Spotfire exportar xlsx). O arquivo é validado antes de substituir o
+    anterior.
+    """
+    pasta = Path(pasta_local).resolve()
+    pasta.mkdir(parents=True, exist_ok=True)
+    temp_download = _preparar_pasta_download(pasta)
+    destino = None
+    driver = _criar_driver(str(temp_download))
+    if stop_event:
+        threading.Thread(
+            target=_watchdog_driver, args=(driver, stop_event), daemon=True
+        ).start()
+
+    try:
+        url = (cfg.url_hoje or "").strip() or _url_produtividade(cfg.url)
+        log_fn("🌐 Spotfire (hoje): abrindo análise de Produtividade...")
+        _fazer_login(driver, url, cfg.login, cfg.senha, log_fn)
+        # Recarregar a análise restaura o estado publicado (filtros em All)
+        # sem clicar em nenhum filtro/item.
+        log_fn("  🔄 Recarregando a análise para resetar os filtros...")
+        driver.get(url)
+        _aguardar_carregamento(driver)
+        log_fn("  🧹 Resetando filtros e marcações pelo menu View...")
+        _resetar_spotfire(driver, log_fn)
+        _aguardar_carregamento(driver)
+
+        painel_temp = None
+        desloc_temp = None
+        try:
+            log_fn("  📤 Exportando Painel Acompanhamento...")
+            painel_temp = _exportar_com_fallback(
+                driver,
+                ["Painel Acompanhamento"],
+                str(temp_download),
+                "_painel_hoje.csv",
+                log_fn,
+                timeout_download=600,
+                estabilidade=5.0,
+            )
+            log_fn("  📤 Exportando Deslocamentos do dia...")
+            desloc_temp = _exportar_com_fallback(
+                driver,
+                ["Deslocamentos"],
+                str(temp_download),
+                "_desloc_hoje.csv",
+                log_fn,
+                timeout_download=900,
+                estabilidade=5.0,
+            )
+        finally:
+            # Deixa a análise limpa (sem equipe marcada) após os downloads.
+            try:
+                _resetar_spotfire(driver, log_fn)
+            except Exception:
+                pass
+
+        # Fecha o Chrome antes de ler/mover: ele pode manter os CSVs abertos.
+        try:
+            driver.quit()
+        except Exception:
+            pass
+        driver = None
+
+        # Junta as colunas do Painel no arquivo de deslocamentos de hoje.
+        merged_temp = temp_download / "_m300_hoje_merged.csv"
+        _merge_painel_desloc(painel_temp, desloc_temp, merged_temp, log_fn)
+
+        destino = pasta / NOME_M300_HOJE
+        _substituir_com_retry(merged_temp, destino, log_fn)
+        log_fn(f"  ✅ Salvo: {destino.name} ({destino.stat().st_size} bytes)")
+        return destino
+    finally:
+        if driver is not None:
+            try:
+                driver.quit()
+            except Exception:
+                pass
+        if destino is not None and destino.exists():
+            _limpar_pasta_download(temp_download)
+
+
+def baixar_deslocamentos_geral(
+    cfg: "SpotfireConfig",
+    pasta_local: str,
+    log_fn=print,
+    stop_event: threading.Event | None = None,
+) -> Path:
+    """Baixa a tabela de deslocamentos GERAL (todos os dias, sem filtros).
+
+    Usa a análise do Scanner 4.0 - RJ, reseta TODOS os filtros para (All) e
+    exporta `Deslocamentos` para `m300_deslocamentos_geral.csv`. Não aplica
+    filtro de data nem de polo: é a base histórica completa disponível.
+    """
+    pasta = Path(pasta_local).resolve()
+    pasta.mkdir(parents=True, exist_ok=True)
+    temp_download = _preparar_pasta_download(pasta)
+    destino = None
+    driver = _criar_driver(str(temp_download))
+    if stop_event:
+        threading.Thread(
+            target=_watchdog_driver, args=(driver, stop_event), daemon=True
+        ).start()
+
+    try:
+        url = _url_analise_m300(cfg.url)
+        log_fn("🌐 Spotfire (geral): abrindo análise do Scanner...")
+        _fazer_login(driver, url, cfg.login, cfg.senha, log_fn)
+        # Abrir a análise de novo restaura o estado publicado (filtros em All),
+        # sem clicar em filtros. Depois basta ir para a aba 'Tab Completa'.
+        log_fn("  🔄 Recarregando a análise para resetar os filtros...")
+        _abrir_analise(driver, url, log_fn)
+        _clicar_aba_tab_completa(driver, log_fn)
+        log_fn("  🧹 Resetando filtros e marcações pelo menu View...")
+        _resetar_spotfire(driver, log_fn)
+        _aguardar_carregamento(driver)
+
+        temp = None
+        try:
+            temp = _exportar_com_fallback(
+                driver,
+                ["Deslocamentos"],
+                str(temp_download),
+                NOME_M300_GERAL,
+                log_fn,
+                timeout_download=TIMEOUT_DOWNLOAD_GERAL,
+                estabilidade=15.0,
+            )
+        finally:
+            # Deixa a análise limpa (sem equipe marcada) após o download.
+            try:
+                _resetar_spotfire(driver, log_fn)
+            except Exception:
+                pass
+
+        # Fecha o Chrome antes de mover: em arquivos grandes o Chrome pode
+        # manter o CSV aberto e travar o rename no Windows.
+        try:
+            driver.quit()
+        except Exception:
+            pass
+        driver = None
+
+        destino = pasta / NOME_M300_GERAL
+        _substituir_com_retry(temp, destino, log_fn)
+        log_fn(f"  ✅ Salvo: {destino.name} ({destino.stat().st_size} bytes)")
+        return destino
+    finally:
+        if driver is not None:
+            try:
+                driver.quit()
+            except Exception:
+                pass
+        if destino is not None and destino.exists():
+            _limpar_pasta_download(temp_download)
