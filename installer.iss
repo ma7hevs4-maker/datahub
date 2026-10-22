@@ -1,11 +1,11 @@
 [Setup]
 AppName=DataHub
-AppVersion=2.0.6
+AppVersion=2.0.7
 AppPublisher=DataHub
 DefaultDirName={localappdata}\DataHub
 DefaultGroupName=DataHub
 OutputDir=C:\Users\BR0163806927\Downloads\Agente I.A\datahub_v2\dist
-OutputBaseFilename=DataHub-2.0.6-Setup
+OutputBaseFilename=DataHub-2.0.7-Setup
 Compression=lzma2
 SolidCompression=yes
 PrivilegesRequired=lowest

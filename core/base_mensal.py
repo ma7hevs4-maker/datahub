@@ -33,6 +33,26 @@ CHAVE_UPSERT = {
 }
 
 
+# Regra de negócio: incidente com Status "Aberto" cuja Data Início é anterior aos últimos N dias (a partir de hoje)
+# não fica na base mensal de incidências (e, por consequência, não vai para o banco).
+DIAS_ABERTO_BASE = 5
+
+
+def descartar_abertos_antigos(df: pd.DataFrame, col_data: str = "Data Início", dias: int = DIAS_ABERTO_BASE):
+    """Retorna (df_sem_abertos_antigos, quantidade_removida)."""
+    if df is None or len(df) == 0 or "Status" not in df.columns or col_data not in df.columns:
+        return df, 0
+    aberto = df["Status"].astype(str).str.strip().str.lower().eq("aberto")
+    try:
+        ini = pd.to_datetime(df[col_data], dayfirst=True, errors="coerce", format="mixed")
+    except (TypeError, ValueError):
+        ini = pd.to_datetime(df[col_data], dayfirst=True, errors="coerce")
+    corte = pd.Timestamp.now().normalize() - pd.Timedelta(days=dias)
+    antigo = (aberto & (ini < corte)).fillna(False)
+    n = int(antigo.sum())
+    return (df[~antigo] if n else df), n
+
+
 def _chave_series(df: pd.DataFrame, chave):
     """Série com o valor da chave (string simples ou composta por '|')."""
     if not chave:
@@ -96,6 +116,7 @@ def _upsert_mes(
     novos: pd.DataFrame,
     chave,
     log_fn=print,
+    limpar_abertos: bool = False,
 ) -> tuple[int, int, int]:
     """
     Faz upsert de `novos` no arquivo `caminho`.
@@ -143,6 +164,11 @@ def _upsert_mes(
             combinado = novos
             adicionados = len(combinado)
             atualizados = 0
+
+    if limpar_abertos:
+        combinado, removidos = descartar_abertos_antigos(combinado)
+        if removidos:
+            log_fn(f"    🧹 {removidos} incidente(s) abertos há mais de {DIAS_ABERTO_BASE} dias saíram da base")
 
     tmp_path = caminho.with_suffix(".tmp.xlsx")
     combinado.to_excel(str(tmp_path), index=False)
@@ -224,7 +250,7 @@ def atualizar_base_mensal(
             except Exception:
                 pass
 
-        total, adicionados, atualizados = _upsert_mes(caminho, grupo, chave, log_fn)
+        total, adicionados, atualizados = _upsert_mes(caminho, grupo, chave, log_fn, limpar_abertos=(relatorio == "incidencias"))
         modificados.append(caminho)
         if cache_hash:
             try:
