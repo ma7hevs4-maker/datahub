@@ -33,7 +33,9 @@ def sincronizar(arquivos: list[Path], pasta_sharepoint: str, log_fn=print) -> No
 
         dst.parent.mkdir(parents=True, exist_ok=True)
 
-        if not dst.exists() or os.path.getmtime(str(src)) >= os.path.getmtime(str(dst)) - 1:
+        # Copia só se o destino não existe ou a origem é MAIS NOVA. copy2 preserva a data de modificação, então um arquivo já
+        # enviado tem data IGUAL à da origem: com '>=' ele era reenviado a cada ciclo.
+        if not dst.exists() or os.path.getmtime(str(src)) > os.path.getmtime(str(dst)) + 1:
             shutil.copy2(str(src), str(dst))
             copiados += 1
 
