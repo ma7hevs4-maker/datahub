@@ -92,7 +92,7 @@ def _filtrar_polo(df, polo: str, log_fn=print):
     return resultado
 
 
-# ── Estado do M300 (6º loop + conferência no 12º) ────────────────────────────
+# ── Estado do M300 (por horário: >=08:00 / >=12:00) ──────────────────────
 
 def _m300_state_path() -> Path:
     base = Path(os.environ.get("APPDATA") or Path.home()) / "DataHub"
@@ -138,7 +138,13 @@ def _m300_loop_atual() -> dict:
             "loops": 0,
             "geral_em": None,
             "base_ate": None,
+            "geral_08h": False,
+            "geral_12h": False,
         }
+    if "geral_08h" not in estado:
+        estado["geral_08h"] = False
+    if "geral_12h" not in estado:
+        estado["geral_12h"] = False
     try:
         estado["loops"] = int(estado.get("loops", 0)) + 1
     except Exception:
@@ -422,9 +428,10 @@ class App:
         Hoje (Produtividade): Deslocamentos + Painel Acompanhamento, com merge
         por Equipe. Scanner: janela de 2 meses com upsert em
         `bases_mensais/deslocamentos` e `bases_mensais/tabela_completa`.
-        Em 'uma_vez', o Scanner roda sempre. Nos modos de loop (10/30/60 min),
-        ele roda no 6º loop do dia, com conferência no 12º. O estado fica em
-        %APPDATA%\\DataHub\\m300_estado.json.
+        Em 'uma_vez', o Scanner roda sempre. Nos modos de loop, o Scanner roda
+        pela primeira vez a partir das 08:00; se às 12:00 ainda não tiver dados
+        do dia anterior (d-1) nas bases mensais, faz conferência/baixa novamente.
+        O estado fica em %APPDATA%\\DataHub\\m300_estado.json.
         """
         cfg = self._cfg
         pasta = str(Path(cfg.pasta_local).resolve())
@@ -439,8 +446,9 @@ class App:
         estado = _m300_loop_atual()
         loops = estado.get("loops", 1)
         data = estado.get("data", datetime.now().strftime("%Y-%m-%d"))
+        agora = datetime.now()
         ontem = (
-            datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+            agora.replace(hour=0, minute=0, second=0, microsecond=0)
             - timedelta(days=1)
         ).strftime("%Y-%m-%d")
         base_ate = str(estado.get("base_ate") or "")
@@ -450,7 +458,7 @@ class App:
             desloc_dir.exists() and any(desloc_dir.glob("*.xlsx"))
             and tc_dir.exists() and any(tc_dir.glob("*.xlsx"))
         )
-        self._log(f"  🔁 M300 — loop {loops} do dia ({data})")
+        self._log(f"  🔁 M300 — loop {loops} do dia ({data}) | {agora.strftime('%H:%M:%S')}")
 
         def _liberado():
             tentativa = estado.get("geral_tentativa")
@@ -458,40 +466,57 @@ class App:
                 return True
             try:
                 return (
-                    datetime.now() - datetime.fromisoformat(tentativa)
+                    agora - datetime.fromisoformat(tentativa)
                 ) >= timedelta(minutes=30)
             except Exception:
                 return True
 
-        # Scanner principal no 6º loop; conferência no 12º (e a cada 6 loops
-        # depois disso, caso a base ainda não tenha o d-1).
-        conferencia = loops >= 12 and (loops - 12) % 6 == 0
         deve_geral = False
         if modo == "uma_vez":
             deve_geral = True
             self._log("  ℹ️  Modo 'Uma vez': Scanner também será executado.")
-        elif loops == 1 and not tem_bases:
+        elif not tem_bases:
             deve_geral = True
-            self._log("  ℹ️  Bases mensais ainda não existem — baixando nesta primeira execução.")
-        elif loops == 6 and not estado.get("geral_em"):
-            if _liberado():
-                deve_geral = True
-                self._log("  ℹ️  6º loop: executando as bases mensais do Scanner.")
-        elif conferencia:
-            if tem_bases and base_ate and base_ate >= ontem:
-                self._log(
-                    f"  ✅ Conferência do {loops}º loop: a base já contém "
-                    f"{ontem} (d-1); nada a baixar."
-                )
-            elif loops == 12 or _liberado():
-                deve_geral = True
-                self._log(
-                    f"  ⚠️  Conferência do {loops}º loop: base não contém "
-                    f"{ontem} (d-1); executando o Scanner."
-                )
+            self._log("  ℹ️  Bases mensais ainda não existem — baixando nesta execução.")
+        else:
+            passou_08h = agora.hour >= 8
+            passou_12h = agora.hour >= 12
+            ja_rodou_08h = bool(estado.get("geral_08h"))
+            ja_rodou_12h = bool(estado.get("geral_12h"))
+            ja_rodou_hoje = bool(estado.get("geral_em")) and estado.get("geral_em") == data
+
+            if passou_08h and not ja_rodou_08h and not ja_rodou_hoje:
+                if _liberado():
+                    deve_geral = True
+                    estado["geral_08h"] = True
+                    self._log("  ℹ️  A partir das 08:00 e ainda não rodou hoje: executando as bases mensais do Scanner.")
+                else:
+                    self._log("  ⏳ Aguardando 30 min desde a última tentativa para baixar as bases mensais.")
+            elif passou_12h and not ja_rodou_12h:
+                if tem_bases and base_ate and base_ate >= ontem:
+                    estado["geral_12h"] = True
+                    _salvar_estado_m300(estado)
+                    self._log(
+                        f"  ✅ Conferência às 12:00: a base já contém {ontem} (d-1); nada a baixar."
+                    )
+                elif _liberado():
+                    deve_geral = True
+                    estado["geral_12h"] = True
+                    self._log(
+                        f"  ⚠️  Às 12:00 a base não contém {ontem} (d-1); executando o Scanner."
+                    )
+                else:
+                    self._log("  ⏳ Aguardando 30 min desde a última tentativa para conferência às 12:00.")
+            elif passou_08h and not ja_rodou_hoje and not ja_rodou_08h:
+                if _liberado():
+                    deve_geral = True
+                    estado["geral_08h"] = True
+                    self._log("  ℹ️  A partir das 08:00: executando as bases mensais do Scanner.")
+                else:
+                    self._log("  ⏳ Aguardando 30 min desde a última tentativa para baixar as bases mensais.")
 
         if deve_geral:
-            estado["geral_tentativa"] = datetime.now().isoformat(timespec="seconds")
+            estado["geral_tentativa"] = agora.isoformat(timespec="seconds")
             _salvar_estado_m300(estado)
 
         self._log("📥 M300 — deslocamentos do dia atual (Deslocamentos + Painel)...")
